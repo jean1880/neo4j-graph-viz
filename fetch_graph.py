@@ -20,6 +20,25 @@ OUT = Path(__file__).with_name("graph.json")
 # Labels that are structural wrappers rather than the meaningful type.
 GENERIC = {"MH"}
 
+# Property keys to omit from the detail overlay (embeddings, internal stamps).
+SKIP_PROPS = {"embedding", "vector", "sync_id"}
+MAX_VAL = 600  # truncate long string values so graph.json stays lean
+
+
+def clean_props(props: dict) -> dict:
+    """Stringify + truncate node properties for display in the overlay."""
+    out: dict[str, str] = {}
+    for key, val in props.items():
+        if key in SKIP_PROPS:
+            continue
+        if isinstance(val, (list, dict)):
+            val = json.dumps(val, ensure_ascii=False)
+        text = str(val)
+        if len(text) > MAX_VAL:
+            text = text[:MAX_VAL] + "…"
+        out[key] = text
+    return out
+
 
 def pick_label(labels: list[str]) -> tuple[str, str]:
     """Return (specific_label, group). Group folds MH:* into one domain."""
@@ -62,6 +81,7 @@ def main() -> int:
                     "label": label,
                     "group": group,
                     "deg": 0,
+                    "props": clean_props(rec["props"]),
                 }
             for rec in sess.run(
                 "MATCH (a)-[r]->(b) RETURN elementId(a) AS s, elementId(b) AS t, type(r) AS rel"

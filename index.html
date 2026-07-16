@@ -29,6 +29,25 @@
   .lg .dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
   .lg .nm { flex: 1; }
   .lg .ct { color: #74778a; font-variant-numeric: tabular-nums; }
+  #detail { bottom: 14px; right: 14px; width: 300px; max-height: 62vh; overflow-y: auto;
+    display: none; }
+  #detail.show { display: block; }
+  #detail .dhead { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 4px; }
+  #detail .dhead .dot { width: 11px; height: 11px; border-radius: 50%; flex: 0 0 auto; margin-top: 3px; }
+  #detail h3 { margin: 0; font-size: 14px; font-weight: 650; flex: 1; word-break: break-word; }
+  #detail .close { cursor: pointer; color: #8a8d9c; font-size: 17px; line-height: 1;
+    padding: 0 4px; border-radius: 5px; flex: 0 0 auto; }
+  #detail .close:hover { background: rgba(255,255,255,.08); color: #fff; }
+  #detail .meta { color: #8a8d9c; font-size: 11px; margin-bottom: 6px; }
+  #detail .sec { text-transform: uppercase; letter-spacing: .8px; font-size: 10px;
+    color: #74778a; margin: 13px 0 6px; }
+  #detail table { width: 100%; border-collapse: collapse; }
+  #detail td { padding: 3px 0; vertical-align: top; font-size: 12px; }
+  #detail td.k { color: #8a8d9c; padding-right: 10px; white-space: nowrap; width: 1%; }
+  #detail td.v { color: #d6d8e0; word-break: break-word; }
+  #detail .nb { display: inline-block; margin: 2px 4px 2px 0; padding: 2px 8px; border-radius: 20px;
+    background: #1c1d26; border: 1px solid #2c2e3a; cursor: pointer; font-size: 11px; }
+  #detail .nb:hover { border-color: #5b8cff; color: #fff; }
   #tip { position: fixed; z-index: 20; pointer-events: none; padding: 5px 9px;
     background: #0d0e13; border: 1px solid #34374a; border-radius: 6px; font-size: 12px;
     display: none; max-width: 260px; }
@@ -44,6 +63,7 @@
   <input id="search" type="search" placeholder="Search nodes…" autocomplete="off">
 </div>
 <div class="panel" id="legend"><h2>Types</h2><div id="legend-items"></div></div>
+<div class="panel" id="detail"></div>
 <div id="tip"></div>
 <div class="hint">scroll = zoom · drag = pan · click = focus</div>
 
@@ -51,6 +71,10 @@
 <script>
 const el = document.getElementById('graph');
 const tip = document.getElementById('tip');
+const detail = document.getElementById('detail');
+
+const esc = s => String(s).replace(/[&<>"]/g,
+  c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 // Stable, distinct-ish colour per label via hashed hue (tuned for dark bg).
 const colorCache = {};
@@ -97,6 +121,8 @@ fetch('./graph.json').then(r => r.json()).then(data => {
 
   const visible = n => !hidden.has(n.label);
   let query = '';
+  let selected = null;                                   // id of the clicked node
+  const nodeById = new Map(data.nodes.map(n => [n.id, n]));
 
   const linkS = l => (typeof l.source === 'object' ? l.source.id : l.source);
   const linkT = l => (typeof l.target === 'object' ? l.target.id : l.target);
@@ -122,7 +148,11 @@ fetch('./graph.json').then(r => r.json()).then(data => {
       ctx.fillStyle = colorFor(n.label);
       ctx.fill();
       if (match) { ctx.lineWidth = 2 / scale; ctx.strokeStyle = '#ffd24a'; ctx.stroke(); }
-      if (scale > 1.6 || hoverNodes.has(n.id) || match) {
+      if (n.id === selected) {
+        ctx.lineWidth = 2.5 / scale; ctx.strokeStyle = '#ffffff';
+        ctx.beginPath(); ctx.arc(n.x, n.y, r + 2.5 / scale, 0, 2 * Math.PI); ctx.stroke();
+      }
+      if (scale > 1.6 || hoverNodes.has(n.id) || n.id === selected || match) {
         const fs = Math.max(10 / scale, 3);
         ctx.font = `${fs}px ui-sans-serif, system-ui, sans-serif`;
         ctx.fillStyle = dim ? 'rgba(214,216,224,.3)' : '#d6d8e0';
@@ -146,11 +176,69 @@ fetch('./graph.json').then(r => r.json()).then(data => {
       }
       el.style.cursor = n ? 'pointer' : '';
     })
-    .onNodeClick(n => { Graph.centerAt(n.x, n.y, 600); Graph.zoom(4, 600); })
+    .onNodeClick(n => selectNode(n))
+    .onBackgroundClick(() => hideDetail())
     .onNodeRightClick(() => Graph.zoomToFit(500, 40));
 
   Graph.d3Force('charge').strength(-95);
   Graph.d3Force('link').distance(38);
+
+  // --- detail overlay (bottom-right, appears on click) ---
+  function neighboursOf(node) {
+    const res = [];
+    data.links.forEach(l => {
+      const s = linkS(l), t = linkT(l);
+      if (s === node.id) res.push({ node: nodeById.get(t), type: l.type, dir: '→' });
+      else if (t === node.id) res.push({ node: nodeById.get(s), type: l.type, dir: '←' });
+    });
+    return res;
+  }
+
+  function buildDetail(node) {
+    const nbs = neighboursOf(node);
+    const byType = {};
+    nbs.forEach(x => byType[x.type] = (byType[x.type] || 0) + 1);
+    const relSummary = Object.entries(byType).sort((a, b) => b[1] - a[1])
+      .map(([t, c]) => `${esc(t)} <span style="color:#74778a">${c}</span>`).join(' · ');
+
+    const props = Object.entries(node.props || {}).filter(([k]) => k !== 'name');
+    const propRows = props.length
+      ? props.map(([k, v]) => `<tr><td class="k">${esc(k)}</td><td class="v">${esc(v)}</td></tr>`).join('')
+      : `<tr><td class="v" style="color:#74778a">no properties</td></tr>`;
+
+    const chips = nbs.slice(0, 60).map(x => x.node
+      ? `<span class="nb" data-id="${esc(x.node.id)}" title="${x.dir} ${esc(x.type)}">${esc(x.node.name)}</span>`
+      : '').join('');
+    const more = nbs.length > 60 ? `<div style="color:#74778a;margin-top:6px">+${nbs.length - 60} more…</div>` : '';
+
+    detail.innerHTML =
+      `<div class="dhead"><span class="dot" style="background:${colorFor(node.label)}"></span>`
+      + `<h3>${esc(node.name)}</h3><span class="close" title="Close">×</span></div>`
+      + `<div class="meta">${esc(node.label)} · ${esc(node.group)} · `
+      + `${node.deg} connection${node.deg === 1 ? '' : 's'}</div>`
+      + `<div class="sec">Properties</div><table>${propRows}</table>`
+      + `<div class="sec">Connections</div>`
+      + (relSummary ? `<div style="font-size:11px;margin-bottom:8px">${relSummary}</div>` : '')
+      + `<div>${chips}${more}</div>`;
+  }
+
+  function selectNode(node) {
+    selected = node.id;
+    buildDetail(node);
+    detail.classList.add('show');
+    if (node.x != null) Graph.centerAt(node.x, node.y, 400);
+  }
+
+  function hideDetail() {
+    selected = null;
+    detail.classList.remove('show');
+  }
+
+  detail.addEventListener('click', e => {
+    if (e.target.classList.contains('close')) { hideDetail(); return; }
+    const chip = e.target.closest('[data-id]');
+    if (chip) { const nb = nodeById.get(chip.dataset.id); if (nb) selectNode(nb); }
+  });
 
   document.addEventListener('mousemove', e => {
     tip.style.left = (e.clientX + 14) + 'px';
@@ -164,6 +252,8 @@ fetch('./graph.json').then(r => r.json()).then(data => {
       if (hit && hit.x != null) { Graph.centerAt(hit.x, hit.y, 500); Graph.zoom(3, 500); }
     }
   });
+
+  window.__fg = Graph;   // console handle: __fg.graphData(), __fg.zoomToFit(), etc.
 
   window.addEventListener('resize', () => Graph.width(innerWidth).height(innerHeight));
   Graph.width(innerWidth).height(innerHeight);
