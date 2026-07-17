@@ -1,0 +1,10 @@
+.git
+.gitignore
+.claude/
+.playwright-mcp/
+__pycache__/
+*.tmp
+graph.json
+README.md
+CLAUDE.md
+view.sh

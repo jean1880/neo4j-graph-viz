@@ -93,7 +93,11 @@ def main() -> int:
                     nodes[t]["deg"] += 1
 
     payload = {"nodes": list(nodes.values()), "links": links}
-    OUT.write_text(json.dumps(payload))
+    # Atomic swap: the container serves graph.json while this runs hourly, so a
+    # partial write must never be visible. os.replace is atomic on one filesystem.
+    tmp = OUT.with_name(OUT.name + ".tmp")
+    tmp.write_text(json.dumps(payload))
+    tmp.replace(OUT)
     print(f"wrote {OUT} — {len(nodes)} nodes, {len(links)} links")
     return 0
 
