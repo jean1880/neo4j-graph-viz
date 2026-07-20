@@ -18,7 +18,9 @@ GRAPH_HOST = os.environ.get("NEO4J_HOST", "bolt://localhost:7687")
 OUT = Path(__file__).with_name("graph.json")
 
 # Labels that are structural wrappers rather than the meaningful type.
-GENERIC = {"MH"}
+# MH = the D&D campaign namespace; HL = the homelab namespace (both are base labels
+# that scope orphan-pruning per writer, not display types — see graph-sync / dnd-context-sync).
+GENERIC = {"MH", "HL"}
 
 # Property keys to omit from the detail overlay (embeddings, internal stamps).
 SKIP_PROPS = {"embedding", "vector", "sync_id"}
