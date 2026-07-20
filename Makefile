@@ -1,8 +1,8 @@
 # Neo4j graph viewer — local dev + container build.
 # Secrets (NEO4J_PASSWORD) always come from ~/.env, never this file.
 IMAGE       ?= neo4j-graph-viz
+GHCR_IMAGE  ?= ghcr.io/jean1880/neo4j-graph-viz   # registry image Unraid/Dockerman pulls
 DOCKER_PORT ?= 8902   # host port for the local container test (native view.sh uses 8901)
-NAS_SSH     ?= nas   # ssh alias for the Unraid NAS (docker load target)
 
 .DEFAULT_GOAL := help
 
@@ -36,15 +36,17 @@ run: build
 stop:
 	-docker stop $(IMAGE)
 
-## deploy: build + ship the image to the NAS (docker save | ssh docker load)
-##         the Dockerman container + nginx vhost are managed in infra-config
-deploy: build
-	docker save $(IMAGE) | ssh $(NAS_SSH) 'docker load'
-	@echo "image on NAS. To pick up the new image, restart the container:"
-	@echo "  ssh $(NAS_SSH) 'docker restart neo4j-graph-viz'"
+## push: break-glass manual publish to GHCR (CI on push to master is the normal path).
+##       Requires `docker login ghcr.io` first. Unraid then pulls the registry image;
+##       never `docker save | ssh docker load` — that sideloads an untracked image and
+##       breaks Dockerman update-check. The container + nginx vhost live in infra-config.
+push:
+	docker build -t $(GHCR_IMAGE):latest .
+	docker push $(GHCR_IMAGE):latest
+	@echo "pushed $(GHCR_IMAGE):latest — recreate the container from its Unraid template to pull it."
 
 ## clean: stop the container and remove the image
 clean: stop
 	-docker rmi $(IMAGE)
 
-.PHONY: help local fetch lint build run stop clean deploy
+.PHONY: help local fetch lint build run stop clean push

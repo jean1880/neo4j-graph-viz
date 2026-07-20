@@ -3,6 +3,8 @@
 # the static force-graph page. Only graph.json ever reaches the browser.
 FROM python:3.12-slim
 
+LABEL org.opencontainers.image.source="https://github.com/jean1880/neo4j-graph-viz"
+
 WORKDIR /app
 
 RUN pip install --no-cache-dir "neo4j>=5,<6"

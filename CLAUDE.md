@@ -34,10 +34,18 @@ Two ways to run it:
 ## Deploy (GitOps)
 
 The service is promoted, not hot-run. The three managed pieces:
-- **Image:** built here, shipped with `make deploy` (`docker save | ssh nas docker load`).
-  Not built on the NAS — rebuild + redeploy to update, then `docker restart neo4j-graph-viz`.
+- **Image:** built by CI (`.github/workflows/build.yml`) on push to `master`, dual-pushed to
+  **GHCR** (`ghcr.io/jean1880/neo4j-graph-viz:latest`) and **Docker Hub**, matching the
+  nordlynx/plex-server house style (amd64 only — the NAS is x86). Unraid pulls the **public**
+  GHCR package with no credentials. CI needs repo secrets `DOCKER_HUB_USERNAME` /
+  `DOCKER_HUB_TOKEN`. NEVER `docker save | ssh docker load` — sideloading an untracked image
+  breaks Dockerman's update-check/version tracking. Break-glass manual publish: `make push`
+  (needs `docker login ghcr.io`). Image bakes only app code — no secrets.
 - **Container:** `infra-config` → `roles/nas_docker_templates/templates/my-neo4j-graph-viz.xml.j2`
-  (Dockerman template; `NEO4J_PASSWORD` from the `neo4j_password` vault var, never committed literal).
+  (Dockerman template; `<Repository>` = the GHCR image, `<Registry>` = its GHCR page, so Unraid
+  manages it as a normal registry image; `NEO4J_PASSWORD` from the `neo4j_password` vault var).
+  To update the running container: bump the image via CI, then recreate it from the template in
+  the Unraid Docker UI (or force-update) so Dockerman pulls the new tag.
 - **Nginx route:** `infra-config` → `proxied_services` (`neo4j-viz`, port 8902) renders the
   OpenWrt vhost. Wildcard `*.example.com` DNS already resolves it; wildcard TLS.
 
