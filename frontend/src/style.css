@@ -1,0 +1,26 @@
+/* App-global layout. Colour/typography come from @nuvek/ui tokens (imported before this). */
+html,
+body,
+#app {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  overflow: hidden;
+}
+
+/* Floating glass panel shared by the HUD, legend, and detail overlays. */
+.nv-graph-panel {
+  position: fixed;
+  z-index: 10;
+  background: var(--glass-bg);
+  border: 1px solid var(--border-alt);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3) var(--space-4);
+  backdrop-filter: blur(8px);
+  box-shadow: var(--shadow-xl);
+}
