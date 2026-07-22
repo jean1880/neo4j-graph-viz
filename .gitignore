@@ -1,3 +1,6 @@
 graph.json
 .playwright-mcp/
 __pycache__/
+/target
+frontend/node_modules/
+frontend/dist/

@@ -1,0 +1,18 @@
+[package]
+name = "neo4j-graph-viz"
+version = "0.1.0"
+edition = "2021"
+description = "Rust/axum backend for the homelab Neo4j graph viewer."
+
+[dependencies]
+neo4rs = "0.8"
+tokio = { version = "1", features = ["full"] }
+anyhow = "1.0"
+axum = "0.8"
+# "rc" enables Serialize for Arc<GraphData> (the cached payload). Serialize-only use — the
+# feature's shared-identity caveats apply to deserialization, which we never do here.
+serde = { version = "1.0", features = ["derive", "rc"] }
+serde_json = "1.0"
+tracing = "0.1"
+# Shared backend scaffold — pinned to a tag on the private GitHub repo (SSH auth).
+nuvek-web = { git = "ssh://git@github.com/jean1880/nuvek-web.git", tag = "v0.1.1" }
