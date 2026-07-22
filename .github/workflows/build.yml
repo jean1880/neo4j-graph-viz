@@ -18,7 +18,28 @@ permissions:
   packages: write
 
 jobs:
+  # Quality gate — fmt/clippy/test the Rust backend + build/typecheck the SPA before publishing.
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust fmt / clippy / test
+        run: |
+          cargo fmt --check
+          cargo clippy --all-targets -- -D warnings
+          cargo test
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Frontend build + typecheck
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+          npm run typecheck
+
   build:
+    needs: check
     runs-on: ubuntu-latest
     steps:
       - name: Docker meta

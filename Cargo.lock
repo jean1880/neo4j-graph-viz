@@ -233,7 +233,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -724,7 +724,7 @@ dependencies = [
 [[package]]
 name = "nuvek-web"
 version = "0.1.1"
-source = "git+ssh://git@github.com/jean1880/nuvek-web.git?tag=v0.1.1#efb8eaa65d7acf99d09be6c27c6ff60328ca9d67"
+source = "git+https://github.com/jean1880/nuvek-web.git?tag=v0.1.1#dc0e7641bcd6c215a0820d712b2f9855f8687dc0"
 dependencies = [
  "anyhow",
  "axum",

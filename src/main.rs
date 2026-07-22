@@ -38,10 +38,14 @@ struct AppState {
 async fn main() -> Result<()> {
     telemetry::init();
 
-    let uri = config::env_or("NEO4J_HOST", "bolt://localhost:7687");
+    // NEO4J_HOST and NEO4J_PASSWORD are runtime config (Dockerman env / docker secret /
+    // ~/.env) — NEVER baked into the image or binary, so no private endpoint or
+    // credential ships in the published (public) image.
+    let uri = config::required_env("NEO4J_HOST")
+        .context("NEO4J_HOST not set — inject it at runtime; never bake a private endpoint in")?;
     let user = config::env_or("NEO4J_USER", "neo4j");
     let pass = config::required_env("NEO4J_PASSWORD")
-        .context("NEO4J_PASSWORD not set (source ~/.env first)")?;
+        .context("NEO4J_PASSWORD not set (inject at runtime; source ~/.env locally)")?;
     // Local dev binds 127.0.0.1:8901 (view.sh); the container overrides BIND=0.0.0.0 PORT=8080.
     let bind = config::env_or("BIND", "127.0.0.1");
     let port = config::env_or("PORT", "8901");

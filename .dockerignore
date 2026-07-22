@@ -8,3 +8,6 @@ graph.json
 README.md
 CLAUDE.md
 view.sh
+target/
+frontend/node_modules/
+frontend/dist/

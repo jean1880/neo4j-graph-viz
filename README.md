@@ -1,7 +1,7 @@
 # neo4j-graph-viz
 
 A local, Obsidian-style force-directed viewer for the homelab Neo4j graph
-(`bolt://localhost:7687`). Fills the gap left by Neo4j Browser (query
+(`bolt://<NEO4J_HOST>` — injected at runtime, never baked in). Fills the gap left by Neo4j Browser (query
 subgraphs only) and Bloom (Enterprise-only): a persistent "map of everything"
 you can explore, filter, and search.
 

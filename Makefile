@@ -1,5 +1,6 @@
 # Neo4j graph viewer — local dev + container build.
-# Secrets (NEO4J_PASSWORD) always come from ~/.env, never this file.
+# Endpoint + secrets (NEO4J_HOST / NEO4J_PASSWORD) come from ~/.env / runtime,
+# never this file or the image.
 IMAGE       ?= neo4j-graph-viz
 GHCR_IMAGE  ?= ghcr.io/jean1880/neo4j-graph-viz   # registry image Unraid/Dockerman pulls
 DOCKER_PORT ?= 8902   # host port for the local container test (native view.sh uses 8901)
@@ -10,17 +11,20 @@ DOCKER_PORT ?= 8902   # host port for the local container test (native view.sh u
 help:
 	@grep -E '^## ' $(MAKEFILE_LIST) | sed 's/## /  /'
 
-## local: fetch the graph and serve the viewer natively on 127.0.0.1:8901
+## local: build the SPA + Rust backend and serve on 127.0.0.1:8901 (opens a browser)
 local:
 	./view.sh
 
-## fetch: regenerate graph.json from Neo4j (sources ~/.env)
-fetch:
-	bash -c 'source $$HOME/.env && python3 fetch_graph.py'
+## gate: cargo fmt/clippy/test + frontend build/typecheck
+gate:
+	cargo fmt --check
+	cargo clippy --all-targets -- -D warnings
+	cargo test
+	cd frontend && npm ci && npm run build && npm run typecheck
 
-## lint: shellcheck the shell scripts
+## lint: shellcheck the shell entry point
 lint:
-	shellcheck view.sh docker-entrypoint.sh
+	shellcheck view.sh
 
 ## build: build the container image
 build:
@@ -49,4 +53,4 @@ push:
 clean: stop
 	-docker rmi $(IMAGE)
 
-.PHONY: help local fetch lint build run stop clean push
+.PHONY: help local gate lint build run stop clean push
