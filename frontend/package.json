@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@nuvek/ui": "github:jean1880/nuvek-ui#v0.2.1",
+    "@nuvek/ui": "github:jean1880/nuvek-ui#v0.3.0",
     "force-graph": "^1.43.0",
     "vue": "^3.5.25"
   },
