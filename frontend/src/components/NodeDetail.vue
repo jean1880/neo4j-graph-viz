@@ -25,8 +25,10 @@ const propRows = computed(() =>
 const chips = computed(() => neighbours.value.slice(0, 60))
 const moreCount = computed(() => Math.max(0, neighbours.value.length - 60))
 
+// Jumping from a chip is an off-canvas intent — the target is very likely off-screen, so this
+// is one of the few paths that is allowed to move the camera.
 function goto(node: GraphNode | undefined) {
-  if (node) select(node)
+  if (node) select(node, { reveal: true })
 }
 </script>
 
@@ -86,6 +88,9 @@ function goto(node: GraphNode | undefined) {
   width: 300px;
   max-height: 62vh;
   overflow-y: auto;
+  /* Node-to-node the content length swings a lot; a reserved gutter keeps the text from
+     reflowing sideways as the scrollbar comes and goes. */
+  scrollbar-gutter: stable;
 }
 .dhead {
   display: flex;

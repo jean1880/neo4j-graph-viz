@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useGraph } from '../composables/useGraph'
+import TypeLegend from './TypeLegend.vue'
 
 const { stats, query, loading, error } = useGraph()
 </script>
@@ -20,6 +21,7 @@ const { stats, query, loading, error } = useGraph()
       autocomplete="off"
       aria-label="Search nodes"
     />
+    <TypeLegend />
   </div>
 </template>
 
@@ -27,7 +29,11 @@ const { stats, query, loading, error } = useGraph()
 .hud {
   top: var(--space-4);
   left: var(--space-4);
-  width: 230px;
+  /* Never wider than the viewport allows — on a phone the fixed 230px used to sit under the
+     legend and overlap the detail panel. */
+  inline-size: min(230px, calc(100vw - var(--space-4) * 2));
+  max-block-size: calc(100dvh - var(--space-4) * 2);
+  overflow-y: auto;
 }
 h1 {
   margin: 0 0 2px;

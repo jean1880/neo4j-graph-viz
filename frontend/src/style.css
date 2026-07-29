@@ -13,7 +13,67 @@ body {
   overflow: hidden;
 }
 
-/* Floating glass panel shared by the HUD, legend, and detail overlays. */
+/* Lets `block-size: auto` be transitioned — used by the HUD's collapsible type legend. */
+:root {
+  interpolate-size: allow-keywords;
+}
+
+/* ---- Scrollbars ----------------------------------------------------------------------------
+   Themed off the @nuvek/ui tokens so the panels' scrollbars stop looking like OS chrome bolted
+   onto glass. `scrollbar-width`/`scrollbar-color` is the actual CSS spec and — crucially — is
+   inherited, so declaring it once here themes every scroll container in the app.
+
+   The ::-webkit-scrollbar-* pseudo-elements are the older, richer, non-standard route. They are
+   NOT layered on top: Chromium ignores them outright as soon as either standard property is set,
+   so mixing the two silently yields whichever the browser prefers. They live behind
+   `@supports not` instead, serving only the engines that lack the standard properties. */
+:root {
+  --scrollbar-thumb: color-mix(in srgb, var(--text) 20%, transparent);
+  --scrollbar-thumb-active: color-mix(in srgb, var(--text) 40%, transparent);
+  --scrollbar-track: transparent;
+
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+/* Recede until the pointer or keyboard is actually in the panel. Inherited, so this covers the
+   nested legend list as well as the panel itself. */
+.nv-graph-panel:hover,
+.nv-graph-panel:focus-within {
+  scrollbar-color: var(--scrollbar-thumb-active) var(--scrollbar-track);
+}
+
+@supports not (scrollbar-color: auto) {
+  ::-webkit-scrollbar {
+    inline-size: 10px;
+    block-size: 10px;
+  }
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
+    background: var(--scrollbar-track);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: var(--radius-full);
+    /* Transparent border + padding-box clip insets the thumb visually while leaving the full
+       10px as grab target. */
+    border: 3px solid transparent;
+    background-clip: padding-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-active);
+    background-clip: padding-box;
+  }
+}
+
+/* Hand the scrollbar back to the OS when the user has asked for system colours. */
+@media (forced-colors: active) {
+  :root {
+    scrollbar-color: auto;
+  }
+}
+
+/* Floating glass panel shared by the HUD and detail overlays. */
 .nv-graph-panel {
   position: fixed;
   z-index: 10;

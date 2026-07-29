@@ -2,14 +2,13 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import GraphCanvas from './components/GraphCanvas.vue'
 import HudPanel from './components/HudPanel.vue'
-import TypeLegend from './components/TypeLegend.vue'
 import NodeDetail from './components/NodeDetail.vue'
 import { useGraph } from './composables/useGraph'
-import type { GraphNode } from './types'
 
-const { load, clearSelection } = useGraph()
+// The tooltip reads the shared hover state rather than keeping its own copy — one owner for
+// "what is hovered" means the tooltip can never disagree with the canvas highlight.
+const { load, clearSelection, hoveredNode } = useGraph()
 
-const hoverNode = ref<GraphNode | null>(null)
 const tipX = ref(0)
 const tipY = ref(0)
 
@@ -34,17 +33,18 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <GraphCanvas @hover="(n) => (hoverNode = n)" />
+  <GraphCanvas />
   <HudPanel />
-  <TypeLegend />
   <NodeDetail />
 
-  <div v-if="hoverNode" class="tip" :style="{ left: `${tipX}px`, top: `${tipY}px` }">
-    <b>{{ hoverNode.name }}</b
-    ><br /><span>{{ hoverNode.label }} · deg {{ hoverNode.deg }}</span>
+  <div v-if="hoveredNode" class="tip" :style="{ left: `${tipX}px`, top: `${tipY}px` }">
+    <b>{{ hoveredNode.name }}</b
+    ><br /><span>{{ hoveredNode.label }} · deg {{ hoveredNode.deg }}</span>
   </div>
 
-  <div class="hint">scroll = zoom · drag = pan · click = focus</div>
+  <div class="hint">
+    scroll = zoom · drag = pan · click = pin · right-click = fit · esc = clear
+  </div>
 </template>
 
 <style scoped>
