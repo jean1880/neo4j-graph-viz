@@ -7,3 +7,34 @@ frontend/dist/
 
 # Scratch diffs from refactors — never an artifact worth tracking.
 *.patch
+
+# OS / editor cruft and local env files
+.DS_Store
+._*
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+*~
+.idea/
+.env
+.env.*
+!.env.example
+!.env.sample
+
+# Runtime logs
+*.log
+
+# Rust build artifacts
+/target/
+**/*.rs.bk
+*.pdb
+
+# Node build artifacts and deps
+node_modules/
+dist/
+.vite/
+coverage/
+npm-debug.log*
+yarn-error.log*
+.npm/
