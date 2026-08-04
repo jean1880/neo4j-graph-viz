@@ -7,10 +7,11 @@ name: build-image
 # The image bakes only app code; the endpoint and credentials are injected at runtime.
 on:
   push:
-    branches: [master]
+    # Both names, so a fork or a re-homed repo using `main` still builds and publishes.
+    branches: [master, main]
     tags: ['v*']
   pull_request:
-    branches: [master]
+    branches: [master, main]
   workflow_dispatch:
 
 # Least privilege by default; only the publishing job gets packages:write.

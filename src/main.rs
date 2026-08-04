@@ -24,6 +24,7 @@ use axum::{
 };
 use neo4rs::{ConfigBuilder, Graph};
 use tokio::sync::RwLock;
+use tower_http::compression::CompressionLayer;
 
 use nuvek_web::{config, health, serve, telemetry};
 
@@ -52,6 +53,10 @@ async fn main() -> Result<()> {
     let pass = config::required_env("NEO4J_PASSWORD")
         .context("NEO4J_PASSWORD not set — inject it at runtime (see .env.example)")?;
     let database = config::env_or("NEO4J_DATABASE", "neo4j");
+    // How long a fetched graph is reused. 0 disables caching (every request refetches).
+    let ttl_secs: u64 = config::env_or("GRAPH_CACHE_TTL_SECS", "3600")
+        .parse()
+        .context("GRAPH_CACHE_TTL_SECS must be a non-negative integer")?;
     // Local dev binds 127.0.0.1:8901 (view.sh); the container overrides BIND=0.0.0.0 PORT=8080.
     let bind = config::env_or("BIND", "127.0.0.1");
     let port = config::env_or("PORT", "8901");
@@ -73,7 +78,7 @@ async fn main() -> Result<()> {
         graph,
         opts,
         cache: RwLock::new(None),
-        ttl: Duration::from_secs(3600),
+        ttl: Duration::from_secs(ttl_secs),
     });
 
     let api = Router::new()
@@ -84,7 +89,10 @@ async fn main() -> Result<()> {
     let app = serve::attach_spa(
         api,
         serve::SpaAssets::detect(&["/app/dist", "frontend/dist"]),
-    );
+    )
+    // Applied outside the SPA layer so the static bundle is compressed too. Negotiated via
+    // Accept-Encoding, so a client that cannot decompress still gets plain JSON.
+    .layer(CompressionLayer::new());
 
     let addr = format!("{bind}:{port}");
     tracing::info!("neo4j-graph-viz listening on http://{addr}");

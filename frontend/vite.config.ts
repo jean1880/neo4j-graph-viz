@@ -15,6 +15,10 @@ export default defineConfig(({ mode }) => {
 
   return {
     envDir: ENV_DIR,
+    // Relative by default so ONE built image works at any mount path — '/', '/tools/graph/',
+    // anything — without a rebuild. An absolute base would hardcode the deployment topology
+    // into the bundle. Set VITE_BASE_PATH to pin an absolute base if your proxy needs it.
+    base: env.VITE_BASE_PATH || './',
     plugins: [
       vue(),
       {

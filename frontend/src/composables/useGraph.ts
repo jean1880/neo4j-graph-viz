@@ -33,6 +33,18 @@ let revealSeq = 0
 const EMPTY_IDS: ReadonlySet<string> = new Set()
 const EMPTY_LINKS: ReadonlySet<GraphLink> = new Set()
 
+/**
+ * Resolve the API against the document the SPA was served from, so the app works unchanged at
+ * `/` or under any proxy prefix (`/tools/graph/`). A root-absolute '/api/graph' would 404 on
+ * every path-prefixed deployment, and baking the prefix in at build time would mean one image
+ * per mount point.
+ */
+function apiUrl(path: string, params?: Record<string, string>): string {
+  const url = new URL(path, document.baseURI)
+  for (const [k, v] of Object.entries(params ?? {})) url.searchParams.set(k, v)
+  return url.href
+}
+
 /** Resolve a link end to a node id (force-graph swaps ids for node objects once simulating). */
 function linkEnd(end: string | GraphNode): string {
   return typeof end === 'object' ? end.id : end
@@ -121,11 +133,17 @@ function reconcileFocus() {
 }
 
 export function useGraph() {
-  async function load() {
+  /**
+   * Fetch the graph. `refresh` bypasses the server's cache (`?refresh=1`) — without it a
+   * reload just re-reads the same cached payload, so there would be no way to see new data
+   * until the server TTL expired.
+   */
+  async function load(opts: { refresh?: boolean } = {}) {
+    if (loading.value) return
     loading.value = true
     error.value = null
     try {
-      const res = await fetch('/api/graph')
+      const res = await fetch(apiUrl('api/graph', opts.refresh ? { refresh: '1' } : undefined))
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       data.value = markRaw((await res.json()) as GraphData)
       reconcileFocus()

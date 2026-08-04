@@ -42,6 +42,7 @@ full set — the essentials:
 | `GRAPH_SKIP_PROPS` | `embedding,vector` | Property keys withheld from the browser |
 | `GRAPH_MAX_NODES` / `GRAPH_MAX_RELS` | `10000` / `20000` | Fetch caps; a truncated fetch logs a warning |
 | `GRAPH_WRAPPER_LABELS` | *(empty)* | Labels that namespace rather than describe a node |
+| `GRAPH_CACHE_TTL_SECS` | `3600` | How long a fetched graph is reused; `0` disables caching |
 | `VITE_APP_TITLE` | `Graph Viewer` | Build-time title |
 
 Out of the box it fetches **every node and relationship** and infers the rest: no label list, no
@@ -79,7 +80,19 @@ docker run --rm --env-file .env -e BIND=0.0.0.0 -e PORT=8080 \
   -p 127.0.0.1:8902:8080 neo4j-graph-viz
 ```
 
-The image bakes only application code. CI publishes to GHCR on push to the default branch.
+The image bakes only application code, runs as an unprivileged user (`uid 10001`), and serves
+both halves compressed. CI publishes to GHCR on push to the default branch.
+
+### Behind a reverse proxy
+
+Asset paths are relative and the API is resolved against the document, so the **same image**
+works at the site root or under any prefix — no rebuild, no base-path env var:
+
+```nginx
+location /tools/graph/ {
+    proxy_pass http://graph-viz:8080/;   # trailing slash strips the prefix
+}
+```
 
 ## Development
 

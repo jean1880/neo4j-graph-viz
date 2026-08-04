@@ -46,6 +46,7 @@ Nothing about the target schema is compiled in:
   which is why the viewer works against an unknown schema with no configuration.
 - `GRAPH_SKIP_PROPS` — property keys never sent to the browser (default `embedding,vector`).
 - `GRAPH_MAX_NODES` / `GRAPH_MAX_RELS` / `GRAPH_MAX_PROP_CHARS` — fetch caps.
+- `GRAPH_CACHE_TTL_SECS` — how long a fetched graph is reused (`0` disables the cache).
 
 The queries use `elementId()`, so **Neo4j 5+** is required; on 4.x that function does not exist.
 
@@ -89,6 +90,13 @@ Run the image with the environment injected by your orchestrator. The container 
 - **Nothing schema-specific gets hardcoded.** New labels auto-assign a hashed hue
   (`frontend/src/color.ts`) and the legend picks them up. Adding a label should never require a
   code change — only the id/name/degree contract in `graph.rs` justifies one.
+- **Nothing deployment-specific gets hardcoded either.** Vite's `base` is `'./'` and the API is
+  resolved against `document.baseURI` (`useGraph.ts`), so one image runs at the site root or
+  under any proxy prefix. A root-absolute `/api/graph` or `/assets/…` breaks every path-prefixed
+  deployment — don't reintroduce one.
+- **Builder and runtime images stay on the same Debian release.** A binary linked against a
+  newer glibc than the runtime fails when the *container starts*, not when the image builds, so
+  CI goes green and the deploy dies.
 - **Keep the SPA reactivity shape.** `useGraph`'s `data` is a `shallowRef` over a `markRaw`'d
   payload because d3-force mutates every node ~60×/s; making it deeply reactive is a large,
   silent performance regression. Same reason `linksByNode` is precomputed rather than scanned.
