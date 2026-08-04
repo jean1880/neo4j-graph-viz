@@ -13,9 +13,9 @@ on:
     branches: [master]
   workflow_dispatch:
 
+# Least privilege by default; only the publishing job gets packages:write.
 permissions:
   contents: read
-  packages: write
 
 jobs:
   # Quality gate — fmt/clippy/test the Rust backend + build/typecheck the SPA before publishing.
@@ -41,6 +41,9 @@ jobs:
   build:
     needs: check
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     env:
       # Empty on a fork or a clone without the secret — every Docker Hub step keys off this.
       DOCKER_HUB_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
