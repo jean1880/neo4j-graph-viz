@@ -36,11 +36,20 @@ full set — the essentials:
 | --- | --- | --- |
 | `NEO4J_HOST` | *(required)* | Full URI — `bolt://`, `neo4j://`, or `neo4j+s://` for TLS/Aura |
 | `NEO4J_PASSWORD` | *(required)* | Never logged, never sent to the browser |
-| `NEO4J_USER` / `NEO4J_DATABASE` | `neo4j` / `neo4j` | |
+| `NEO4J_USER` / `NEO4J_DATABASE` | `neo4j` / `neo4j` | User, and which database on a multi-database server |
+| `GRAPH_NODE_LABELS` / `GRAPH_REL_TYPES` | *(empty — everything)* | Allow-lists narrowing what gets fetched |
+| `GRAPH_NAME_KEYS` | `name,title,displayName,id,…` | Property keys tried in order for a node's display name |
 | `GRAPH_SKIP_PROPS` | `embedding,vector` | Property keys withheld from the browser |
 | `GRAPH_MAX_NODES` / `GRAPH_MAX_RELS` | `10000` / `20000` | Fetch caps; a truncated fetch logs a warning |
 | `GRAPH_WRAPPER_LABELS` | *(empty)* | Labels that namespace rather than describe a node |
 | `VITE_APP_TITLE` | `Graph Viewer` | Build-time title |
+
+Out of the box it fetches **every node and relationship** and infers the rest: no label list, no
+relationship types, no schema file. Point it at a database and it renders. The variables above
+exist for when you want to narrow that — `GRAPH_NODE_LABELS` and `GRAPH_REL_TYPES` filter in
+Cypher, so on a large graph they cut both the payload and the query cost.
+
+Requires **Neo4j 5+** (the queries use `elementId()`).
 
 Node colour is a hash of the label, so a schema the viewer has never seen still renders with
 stable, distinct colours and a complete legend — no configuration required. Node size is degree.

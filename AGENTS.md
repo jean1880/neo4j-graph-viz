@@ -33,13 +33,21 @@ fallback host, that's the bug. See `.env.example` for the full list.
 Required: `NEO4J_HOST` (full URI — `bolt://`, `neo4j://`, or `neo4j+s://` for TLS/Aura),
 `NEO4J_PASSWORD`. Optional: `NEO4J_USER`, `NEO4J_DATABASE`, `BIND`, `PORT`.
 
-Graph shaping lives in `FetchOptions` (`src/graph.rs`), read from env once at startup:
+Everything the fetch does is `FetchOptions` (`src/graph.rs`), read from env once at startup.
+Nothing about the target schema is compiled in:
 
+- `NEO4J_DATABASE` — which database, for multi-database servers.
+- `GRAPH_NODE_LABELS` / `GRAPH_REL_TYPES` — allow-lists narrowing what is fetched. Empty by
+  default (the whole graph). Applied in Cypher, not after, so they cut query cost too. They are
+  passed as query **parameters**, never string-spliced into the Cypher — keep it that way.
+- `GRAPH_NAME_KEYS` — property keys tried in order for a node's display name.
 - `GRAPH_WRAPPER_LABELS` — labels that namespace a node rather than describe it. Dropped when
   choosing the display label; the first match becomes the node's `group`. Empty by default,
   which is why the viewer works against an unknown schema with no configuration.
 - `GRAPH_SKIP_PROPS` — property keys never sent to the browser (default `embedding,vector`).
 - `GRAPH_MAX_NODES` / `GRAPH_MAX_RELS` / `GRAPH_MAX_PROP_CHARS` — fetch caps.
+
+The queries use `elementId()`, so **Neo4j 5+** is required; on 4.x that function does not exist.
 
 Frontend build-time: `VITE_APP_TITLE` (tab + HUD heading), `VITE_API_TARGET` (dev proxy).
 

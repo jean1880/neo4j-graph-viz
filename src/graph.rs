@@ -23,6 +23,9 @@ const DEFAULT_SKIP_PROPS: &str = "embedding,vector";
 const DEFAULT_MAX_NODES: &str = "10000";
 const DEFAULT_MAX_RELS: &str = "20000";
 const DEFAULT_MAX_PROP_CHARS: &str = "600";
+/// Property keys tried, in order, when choosing a node's display name. Deliberately broad:
+/// the first one a node actually has wins, so one default suits several schemas.
+const DEFAULT_NAME_KEYS: &str = "name,title,displayName,id,hostname,canonical";
 
 /// Runtime shaping options — all of it env-driven so the viewer stays schema-agnostic.
 #[derive(Debug, Clone)]
@@ -33,6 +36,12 @@ pub struct FetchOptions {
     pub wrapper_labels: Vec<String>,
     /// Property keys never sent to the browser.
     pub skip_props: Vec<String>,
+    /// Property keys tried in order when choosing a node's display name.
+    pub name_keys: Vec<String>,
+    /// Only fetch nodes carrying one of these labels. Empty = every label.
+    pub node_labels: Vec<String>,
+    /// Only fetch relationships of these types. Empty = every type.
+    pub rel_types: Vec<String>,
     pub max_nodes: i64,
     pub max_rels: i64,
     /// Longest property value rendered before truncation.
@@ -57,6 +66,9 @@ impl FetchOptions {
         Ok(Self {
             wrapper_labels: csv(&config::env_or("GRAPH_WRAPPER_LABELS", "")),
             skip_props: csv(&config::env_or("GRAPH_SKIP_PROPS", DEFAULT_SKIP_PROPS)),
+            name_keys: csv(&config::env_or("GRAPH_NAME_KEYS", DEFAULT_NAME_KEYS)),
+            node_labels: csv(&config::env_or("GRAPH_NODE_LABELS", "")),
+            rel_types: csv(&config::env_or("GRAPH_REL_TYPES", "")),
             max_nodes: num("GRAPH_MAX_NODES", DEFAULT_MAX_NODES)?,
             max_rels: num("GRAPH_MAX_RELS", DEFAULT_MAX_RELS)?,
             max_prop_chars: num("GRAPH_MAX_PROP_CHARS", DEFAULT_MAX_PROP_CHARS)? as usize,
@@ -69,6 +81,9 @@ impl Default for FetchOptions {
         Self {
             wrapper_labels: Vec::new(),
             skip_props: csv(DEFAULT_SKIP_PROPS),
+            name_keys: csv(DEFAULT_NAME_KEYS),
+            node_labels: Vec::new(),
+            rel_types: Vec::new(),
             max_nodes: 10_000,
             max_rels: 20_000,
             max_prop_chars: 600,
@@ -148,15 +163,14 @@ fn pick_label(labels: &[String], wrappers: &[String]) -> (String, String) {
     (specific, group)
 }
 
-/// Pick a display name: the first non-empty priority key (`name`/`title`/`id`/`hostname`/
-/// `canonical`), else the first non-empty string property. `serde_json`'s object is a
-/// `BTreeMap`, so the no-priority-key fallback is **deterministic (alphabetical by key)**
-/// rather than driver-return order.
-fn pick_name(props: &Value) -> String {
+/// Pick a display name: the first non-empty key from `name_keys`, else the first non-empty
+/// string property. `serde_json`'s object is a `BTreeMap`, so the no-priority-key fallback is
+/// **deterministic (alphabetical by key)** rather than driver-return order.
+fn pick_name(props: &Value, name_keys: &[String]) -> String {
     let Value::Object(obj) = props else {
         return "?".to_string();
     };
-    for key in ["name", "title", "id", "hostname", "canonical"] {
+    for key in name_keys {
         if let Some(Value::String(s)) = obj.get(key) {
             if !s.trim().is_empty() {
                 return s.clone();
@@ -181,13 +195,22 @@ fn pick_name(props: &Value) -> String {
 pub async fn fetch(graph: &Graph, opts: &FetchOptions) -> Result<GraphData> {
     let mut nodes: BTreeMap<String, GraphNode> = BTreeMap::new();
 
+    // Label / type allow-lists are operator config, so they are passed as parameters rather
+    // than spliced into the Cypher — the query text stays fixed and plan-cacheable.
+    let node_filter = if opts.node_labels.is_empty() {
+        ""
+    } else {
+        "WHERE any(l IN labels(n) WHERE l IN $labels) "
+    };
+    let node_cypher = format!(
+        "MATCH (n) {node_filter}RETURN elementId(n) AS id, labels(n) AS labels, \
+         properties(n) AS props LIMIT $limit"
+    );
     let mut node_rows = graph
         .execute(
-            query(
-                "MATCH (n) RETURN elementId(n) AS id, labels(n) AS labels, \
-                 properties(n) AS props LIMIT $limit",
-            )
-            .param("limit", opts.max_nodes),
+            query(&node_cypher)
+                .param("labels", opts.node_labels.clone())
+                .param("limit", opts.max_nodes),
         )
         .await
         .context("node query failed")?;
@@ -200,7 +223,7 @@ pub async fn fetch(graph: &Graph, opts: &FetchOptions) -> Result<GraphData> {
             id.clone(),
             GraphNode {
                 id,
-                name: pick_name(&props),
+                name: pick_name(&props, &opts.name_keys),
                 label,
                 group,
                 deg: 0,
@@ -216,13 +239,20 @@ pub async fn fetch(graph: &Graph, opts: &FetchOptions) -> Result<GraphData> {
     }
 
     let mut links: Vec<GraphLink> = Vec::new();
+    let rel_filter = if opts.rel_types.is_empty() {
+        ""
+    } else {
+        "WHERE type(r) IN $types "
+    };
+    let rel_cypher = format!(
+        "MATCH (a)-[r]->(b) {rel_filter}RETURN elementId(a) AS s, elementId(b) AS t, \
+         type(r) AS rel LIMIT $limit"
+    );
     let mut rel_rows = graph
         .execute(
-            query(
-                "MATCH (a)-[r]->(b) RETURN elementId(a) AS s, elementId(b) AS t, \
-                 type(r) AS rel LIMIT $limit",
-            )
-            .param("limit", opts.max_rels),
+            query(&rel_cypher)
+                .param("types", opts.rel_types.clone())
+                .param("limit", opts.max_rels),
         )
         .await
         .context("relationship query failed")?;
@@ -313,19 +343,30 @@ mod tests {
 
     #[test]
     fn pick_name_prefers_priority_keys_then_falls_back() {
+        let keys = FetchOptions::default().name_keys;
+        // Earlier key in the list wins over a later one.
         assert_eq!(
-            pick_name(&json!({ "hostname": "nas", "name": "NAS" })),
-            "NAS"
+            pick_name(&json!({ "hostname": "n", "name": "N" }), &keys),
+            "N"
         );
-        assert_eq!(pick_name(&json!({ "hostname": "nas" })), "nas");
+        assert_eq!(pick_name(&json!({ "hostname": "n" }), &keys), "n");
         // No priority key → first stringy value.
-        assert_eq!(pick_name(&json!({ "foo": "bar" })), "bar");
+        assert_eq!(pick_name(&json!({ "foo": "bar" }), &keys), "bar");
         // No priority key, multiple props → deterministic alphabetical-by-key fallback
         // ("alpha" < "zeta"), regardless of JSON declaration order.
-        assert_eq!(pick_name(&json!({ "zeta": "z", "alpha": "a" })), "a");
+        assert_eq!(pick_name(&json!({ "zeta": "z", "alpha": "a" }), &keys), "a");
         // Blank strings are skipped.
-        assert_eq!(pick_name(&json!({ "name": "  ", "title": "Real" })), "Real");
-        assert_eq!(pick_name(&json!({})), "?");
+        assert_eq!(
+            pick_name(&json!({ "name": "  ", "title": "R" }), &keys),
+            "R"
+        );
+        assert_eq!(pick_name(&json!({}), &keys), "?");
+        // GRAPH_NAME_KEYS order is authoritative — a custom list overrides the defaults.
+        let custom = csv("email,name");
+        assert_eq!(
+            pick_name(&json!({ "name": "N", "email": "e@x" }), &custom),
+            "e@x"
+        );
     }
 
     #[test]
