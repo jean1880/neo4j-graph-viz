@@ -3,11 +3,14 @@ import { useGraph } from '../composables/useGraph'
 import TypeLegend from './TypeLegend.vue'
 
 const { stats, query, loading, error } = useGraph()
+
+// Build-time branding: set VITE_APP_TITLE to rename the viewer without touching a component.
+const title = import.meta.env.VITE_APP_TITLE || 'Graph Viewer'
 </script>
 
 <template>
   <div class="nv-graph-panel hud">
-    <h1>Homelab Graph</h1>
+    <h1>{{ title }}</h1>
     <div class="sub">
       <span v-if="error" class="err">⚠ Failed to load: {{ error }}</span>
       <span v-else-if="loading">loading…</span>

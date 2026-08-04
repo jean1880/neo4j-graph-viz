@@ -2,7 +2,9 @@
 name = "neo4j-graph-viz"
 version = "0.1.0"
 edition = "2021"
-description = "Rust/axum backend for the homelab Neo4j graph viewer."
+description = "Rust/axum backend for a force-directed Neo4j graph viewer."
+license = "MIT"
+repository = "https://github.com/jean1880/neo4j-graph-viz"
 
 [dependencies]
 neo4rs = "0.8"

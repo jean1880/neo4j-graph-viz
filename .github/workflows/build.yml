@@ -1,10 +1,10 @@
 name: build-image
 
-# Build the viewer image and publish it so Unraid/Dockerman can pull a properly-tagged
-# registry image (update-check, reinstall, version tracking all work). Matches the house
-# style of nordlynx/plex-server: metadata-action + build-push-action + gha cache, pushing
-# to GHCR and Docker Hub. amd64 only — the Unraid NAS is x86. The image bakes only app
-# code; NEO4J_PASSWORD is injected at runtime, never built in.
+# Gate (fmt/clippy/test + SPA build/typecheck), then build and publish the image.
+#
+# Publishes to GHCR always, and additionally to Docker Hub only when the DOCKER_HUB_USERNAME
+# secret is set — so forks and clones without those secrets still build green.
+# The image bakes only app code; the endpoint and credentials are injected at runtime.
 on:
   push:
     branches: [master]
@@ -41,6 +41,9 @@ jobs:
   build:
     needs: check
     runs-on: ubuntu-latest
+    env:
+      # Empty on a fork or a clone without the secret — every Docker Hub step keys off this.
+      DOCKER_HUB_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
     steps:
       - name: Docker meta
         id: meta
@@ -48,7 +51,7 @@ jobs:
         with:
           images: |
             ghcr.io/${{ github.repository }}
-            ${{ secrets.DOCKER_HUB_USERNAME }}/neo4j-graph-viz
+            ${{ env.DOCKER_HUB_USERNAME && format('{0}/neo4j-graph-viz', env.DOCKER_HUB_USERNAME) || '' }}
           tags: |
             type=edge,branch=master
             type=ref,event=pr
@@ -58,7 +61,7 @@ jobs:
             type=raw,value={{date 'YYYY-MM-DD'}},enable={{is_default_branch}}
 
       - name: Log into Docker Hub
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && env.DOCKER_HUB_USERNAME != ''
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}

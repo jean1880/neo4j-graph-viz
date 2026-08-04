@@ -41,8 +41,10 @@ function goto(node: GraphNode | undefined) {
         ×
       </button>
     </div>
+    <!-- `group` is empty unless GRAPH_WRAPPER_LABELS matched a wrapper label — omit it then. -->
     <div class="meta">
-      {{ selectedNode.label }} · {{ selectedNode.group }} ·
+      {{ selectedNode.label }} ·<template v-if="selectedNode.group">
+        {{ selectedNode.group }} ·</template>
       {{ selectedNode.deg }} connection{{ selectedNode.deg === 1 ? '' : 's' }}
     </div>
 

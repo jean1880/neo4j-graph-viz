@@ -1,40 +1,87 @@
 # neo4j-graph-viz
 
-A local, Obsidian-style force-directed viewer for the homelab Neo4j graph
-(`bolt://<NEO4J_HOST>` — injected at runtime, never baked in). Fills the gap left by Neo4j Browser (query
-subgraphs only) and Bloom (Enterprise-only): a persistent "map of everything"
-you can explore, filter, and search.
+An Obsidian-style force-directed viewer for a Neo4j graph — a persistent, searchable "map of
+everything" you can explore, filter, and search.
 
-## Usage
+It fills the gap left by Neo4j Browser (draws query results only, so you never see the whole
+shape) and Bloom (Enterprise-only). Point it at a database and it renders every node and
+relationship at once.
+
+A **Rust/axum backend** reads the graph over Bolt and serves it as `GET /api/graph`; a
+**Vue 3 SPA** renders it with [vasturiano/force-graph](https://github.com/vasturiano/force-graph).
+The browser only ever receives that JSON — never a Bolt endpoint, never a credential.
+
+## Quick start
 
 ```bash
-./view.sh          # pull live data, serve on http://localhost:8901, open browser
-PORT=9000 ./view.sh
+cp .env.example .env    # fill in NEO4J_HOST and NEO4J_PASSWORD
+./view.sh               # builds both halves, serves http://localhost:8901, opens a browser
 ```
 
-`view.sh` sources `~/.env` for `NEO4J_PASSWORD`, regenerates `graph.json`
-from the live graph, then serves the static viewer bound to `127.0.0.1` only.
+Requires Rust (stable), Node 22+, and `git` on `PATH`.
 
 ## Controls
 
 - **scroll** zoom · **drag** pan · **click** focus a node · **right-click** fit to view
 - **hover** a node to highlight it and its neighbours (dims the rest)
 - **search box** finds and centres a node by name
-- **legend** — click a type to show/hide all nodes of that type
+- **legend** — click a type to show/hide it; the graph re-fits to what's left
 
-## How it works
+## Configuration
 
-- `fetch_graph.py` — connects with the `neo4j` driver (password from the
-  environment, never hardcoded, never sent to the browser), pulls every node +
-  relationship, and writes `graph.json` (`{nodes, links}` shaped for force-graph).
-  Node colour = type, size = degree; `MH:*` nodes fold into one D&D domain group.
-- `index.html` — [vasturiano/force-graph](https://github.com/vasturiano/force-graph)
-  (vendored as `force-graph.min.js`, no runtime CDN) rendering `graph.json`.
-- `graph.json` is a generated snapshot and is git-ignored — rerun `view.sh` to refresh.
+Everything is runtime environment config; nothing is compiled in. `.env.example` documents the
+full set — the essentials:
 
-## Notes
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `NEO4J_HOST` | *(required)* | Full URI — `bolt://`, `neo4j://`, or `neo4j+s://` for TLS/Aura |
+| `NEO4J_PASSWORD` | *(required)* | Never logged, never sent to the browser |
+| `NEO4J_USER` / `NEO4J_DATABASE` | `neo4j` / `neo4j` | |
+| `GRAPH_SKIP_PROPS` | `embedding,vector` | Property keys withheld from the browser |
+| `GRAPH_MAX_NODES` / `GRAPH_MAX_RELS` | `10000` / `20000` | Fetch caps; a truncated fetch logs a warning |
+| `GRAPH_WRAPPER_LABELS` | *(empty)* | Labels that namespace rather than describe a node |
+| `VITE_APP_TITLE` | `Graph Viewer` | Build-time title |
 
-- Data is a snapshot taken at launch, not live-streaming. Re-run `view.sh` to refresh.
-- The graph holds two worlds — homelab infra (Containers, Volumes, Ports, Skills,
-  Repos, AnsibleRoles…) and the Monster Hunters D&D canon (Characters, Locations,
-  Factions, Deities…). Use the legend toggles to isolate either.
+Node colour is a hash of the label, so a schema the viewer has never seen still renders with
+stable, distinct colours and a complete legend — no configuration required. Node size is degree.
+
+`GRAPH_WRAPPER_LABELS` covers the case where every node in a subgraph carries a shared base
+label (say `Base`) alongside its real type. Listing it here keeps the display label meaningful
+and folds those nodes into one `group`.
+
+## Security
+
+**`/api/graph` is unauthenticated and returns every node, relationship, and property that the
+fetch options admit.** That is the right default for a graph you'd publish and the wrong one for
+anything else. Before exposing this beyond localhost:
+
+- put an authenticating reverse proxy in front of it;
+- add any sensitive property key to `GRAPH_SKIP_PROPS`;
+- use a read-only Neo4j user.
+
+Credentials stay server-side by construction — the SPA never talks Bolt, and the API response
+carries no endpoint or credential.
+
+## Running as a container
+
+```bash
+docker build -t neo4j-graph-viz .
+docker run --rm --env-file .env -e BIND=0.0.0.0 -e PORT=8080 \
+  -p 127.0.0.1:8902:8080 neo4j-graph-viz
+```
+
+The image bakes only application code. CI publishes to GHCR on push to the default branch.
+
+## Development
+
+```bash
+make gate    # cargo fmt --check + clippy -D warnings + test, then SPA build + typecheck
+make help    # list all targets
+```
+
+`AGENTS.md` documents the architecture, invariants, and constraints in more depth — worth
+reading before a substantial change.
+
+## Licence
+
+MIT — see [LICENSE](LICENSE).

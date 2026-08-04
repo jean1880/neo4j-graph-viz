@@ -1,8 +1,10 @@
 # Neo4j graph viewer — local dev + container build.
-# Endpoint + secrets (NEO4J_HOST / NEO4J_PASSWORD) come from ~/.env / runtime,
-# never this file or the image.
+# Endpoint + credentials (NEO4J_HOST / NEO4J_PASSWORD) come from the environment or a
+# git-ignored .env at runtime — never this file, and never the image.
 IMAGE       ?= neo4j-graph-viz
-GHCR_IMAGE  ?= ghcr.io/jean1880/neo4j-graph-viz   # registry image Unraid/Dockerman pulls
+REGISTRY    ?= ghcr.io/OWNER            # override: make push REGISTRY=ghcr.io/your-org
+PUSH_IMAGE  ?= $(REGISTRY)/$(IMAGE)
+ENV_FILE    ?= .env
 DOCKER_PORT ?= 8902   # host port for the local container test (native view.sh uses 8901)
 
 .DEFAULT_GOAL := help
@@ -31,23 +33,25 @@ build:
 	docker build -t $(IMAGE) .
 
 ## run: build + run the container locally for a smoke test (http://127.0.0.1:$(DOCKER_PORT))
+##      Reads config from $(ENV_FILE) — copy .env.example first. Binds loopback only.
 run: build
-	bash -c 'source $$HOME/.env && docker run --rm \
-	  -e NEO4J_PASSWORD -e NEO4J_HOST \
-	  -p 127.0.0.1:$(DOCKER_PORT):8080 --name $(IMAGE) $(IMAGE)'
+	@test -f $(ENV_FILE) || { echo "missing $(ENV_FILE) — cp .env.example .env"; exit 1; }
+	docker run --rm --env-file $(ENV_FILE) \
+	  -e BIND=0.0.0.0 -e PORT=8080 \
+	  -p 127.0.0.1:$(DOCKER_PORT):8080 --name $(IMAGE) $(IMAGE)
 
 ## stop: stop the local test container
 stop:
 	-docker stop $(IMAGE)
 
-## push: break-glass manual publish to GHCR (CI on push to master is the normal path).
-##       Requires `docker login ghcr.io` first. Unraid then pulls the registry image;
-##       never `docker save | ssh docker load` — that sideloads an untracked image and
-##       breaks Dockerman update-check. The container + nginx vhost live in infra-config.
+## push: manual publish (CI on push to the default branch is the normal path).
+##       Requires `docker login` against $(REGISTRY) first. Set REGISTRY to your own org.
 push:
-	docker build -t $(GHCR_IMAGE):latest .
-	docker push $(GHCR_IMAGE):latest
-	@echo "pushed $(GHCR_IMAGE):latest — recreate the container from its Unraid template to pull it."
+	@case "$(PUSH_IMAGE)" in */OWNER/*) \
+	  echo "set REGISTRY, e.g. make push REGISTRY=ghcr.io/your-org"; exit 1 ;; esac
+	docker build -t $(PUSH_IMAGE):latest .
+	docker push $(PUSH_IMAGE):latest
+	@echo "pushed $(PUSH_IMAGE):latest"
 
 ## clean: stop the container and remove the image
 clean: stop

@@ -252,7 +252,7 @@ onBeforeUnmount(() => {
     ref="el"
     class="graph"
     role="img"
-    aria-label="Interactive force-directed graph of the homelab Neo4j nodes"
+    aria-label="Interactive force-directed graph of the Neo4j nodes"
   ></div>
 </template>
 

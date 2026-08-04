@@ -5,6 +5,13 @@ __pycache__/
 frontend/node_modules/
 frontend/dist/
 
+# Local AI-assistant context. AGENTS.md is the committed, shareable version; CLAUDE.md and
+# .claude/ hold machine- and deployment-specific notes that must not be published.
+CLAUDE.md
+.claude/
+.cursor/
+.aider*
+
 # Scratch diffs from refactors — never an artifact worth tracking.
 *.patch
 

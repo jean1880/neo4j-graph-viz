@@ -1,12 +1,12 @@
 # syntax=docker/dockerfile:1
 # Multi-stage build: Vue SPA + Rust/axum backend. The Rust backend serves the built SPA and
-# GET /api/graph; NEO4J_PASSWORD is injected at runtime (Dockerman), never baked in. Only the
-# /api/graph JSON reaches the browser — no Bolt endpoint or credentials.
+# GET /api/graph; the endpoint and credentials are injected at runtime, never baked in. Only
+# the /api/graph JSON reaches the browser — no Bolt endpoint or credentials.
 
 # --- 1. Build the Vue SPA (pulls @nuvek/ui from its public git tag; its prepare builds dist) ---
 FROM node:22-slim AS frontend
 WORKDIR /app/frontend
-# git is needed for the `github:jean1880/nuvek-ui` dependency.
+# git is needed for the @nuvek/ui git dependency.
 RUN apt-get update && apt-get install -y --no-install-recommends git \
   && rm -rf /var/lib/apt/lists/*
 COPY frontend/package.json frontend/package-lock.json ./
@@ -32,9 +32,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 WORKDIR /app
 COPY --from=backend /app/target/release/neo4j-graph-viz /usr/local/bin/neo4j-graph-viz
 COPY --from=frontend /app/frontend/dist /app/dist
-# The Rust backend refreshes the graph on an hourly in-process TTL (no cron loop needed).
-# NEO4J_HOST + NEO4J_PASSWORD are injected at RUNTIME (Dockerman env / docker secret) — never
-# baked here, so no private endpoint or credential ships in the published image.
+# The backend refreshes the graph on an hourly in-process TTL (no cron loop needed).
+# NEO4J_HOST + NEO4J_PASSWORD are injected at RUNTIME (orchestrator env / secret) — never baked
+# here, so no endpoint or credential ships in the published image. See .env.example.
 ENV BIND=0.0.0.0 \
     PORT=8080
 EXPOSE 8080
