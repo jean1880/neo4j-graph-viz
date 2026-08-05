@@ -1,5 +1,11 @@
 # neo4j-graph-viz
 
+[![build](https://github.com/jean1880/neo4j-graph-viz/actions/workflows/build.yml/badge.svg)](https://github.com/jean1880/neo4j-graph-viz/actions/workflows/build.yml)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/rust-stable-orange.svg?logo=rust&logoColor=white)](Cargo.toml)
+[![Vue 3](https://img.shields.io/badge/vue-3-42b883.svg?logo=vue.js&logoColor=white)](frontend/package.json)
+[![Neo4j 5+](https://img.shields.io/badge/neo4j-5%2B-008cc1.svg?logo=neo4j&logoColor=white)](https://neo4j.com/)
+
 An Obsidian-style force-directed viewer for a Neo4j graph — a persistent, searchable "map of
 everything" you can explore, filter, and search.
 
