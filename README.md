@@ -96,9 +96,25 @@ location /tools/graph/ {
 
 ## Development
 
+`make help` lists everything. The common flow:
+
 ```bash
-make gate    # cargo fmt --check + clippy -D warnings + test, then SPA build + typecheck
-make help    # list all targets
+make gate               # fmt + clippy -D warnings + test + SPA build/typecheck (what CI runs)
+make verify             # build the image, run it, smoke-test it, tear down
+make verify-published   # same, but against the image CI actually published
+make smoke URL=https://graph.example.com   # smoke-test any deployed instance
+```
+
+`smoke.sh` is read-only and standalone — it checks health, that the SPA and its bundle resolve
+(the first thing a path-prefixed deployment breaks), that responses are compressed, and that
+the payload describes a usable graph rather than an empty or mislabelled one. Use it as a
+post-deploy gate.
+
+Config comes from `ENV_FILE` (default `.env`); only the app's own keys are forwarded into the
+container, never the whole file:
+
+```bash
+ENV_FILE=~/some-other.env make verify-published
 ```
 
 `AGENTS.md` documents the architecture, invariants, and constraints in more depth — worth

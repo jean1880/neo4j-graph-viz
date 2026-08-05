@@ -58,12 +58,21 @@ Frontend build-time: `VITE_APP_TITLE` (tab + HUD heading), `VITE_API_TARGET` (de
 cp .env.example .env         # then fill in NEO4J_HOST / NEO4J_PASSWORD
 ./view.sh                    # build both, serve on 127.0.0.1:8901, open a browser
 make gate                    # fmt + clippy -D warnings + cargo test + SPA build + typecheck
-make build && make run       # container smoke test on 127.0.0.1:8902
-make push REGISTRY=ghcr.io/your-org   # manual publish; CI is the normal path
+make verify                  # build image, run it, smoke-test it, tear down
+make verify-published        # same, against the image CI actually published
+make smoke URL=https://…     # smoke-test a deployed instance
 ```
 
 `make gate` is what CI runs. Run it before calling any change done — `clippy` is `-D warnings`,
-so a warning is a build failure.
+so a warning is a build failure. `make verify` is the stronger check: it proves the *container*
+works, which `gate` cannot.
+
+Two Makefile conventions worth not breaking:
+
+- **Comments go on their own line.** Make captures trailing whitespace before an inline `#`, so
+  `PORT ?= 8902  # note` silently yields `"8902  "` and corrupts anything concatenating it.
+- **Only `APP_ENV` keys are forwarded into the container**, never the whole env file — the file
+  may hold unrelated secrets, and `--env-file` would inject every one of them.
 
 ## Deploy
 
