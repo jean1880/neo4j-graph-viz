@@ -5,6 +5,14 @@ __pycache__/
 frontend/node_modules/
 frontend/dist/
 
+# Screenshots and other captured images are debugging artifacts, never source. The app ships
+# no raster assets, so a blanket ignore is safe — force-add with `git add -f` if that changes.
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+
 # Local AI-assistant context. AGENTS.md is the committed, shareable version; CLAUDE.md and
 # .claude/ hold machine- and deployment-specific notes that must not be published.
 CLAUDE.md
