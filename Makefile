@@ -59,7 +59,17 @@ gate:
 
 ## lint: shellcheck the shell entry points
 lint:
-	shellcheck view.sh smoke.sh
+	shellcheck view.sh smoke.sh release.sh
+
+# --- release --------------------------------------------------------------------------------
+
+## release: bump the version, run the gate, commit and tag (BUMP=major|minor|patch|x.y.z)
+##          e.g. make release            -> minor, a feature release
+##               make release BUMP=patch -> a fix release
+##               make release DRY_RUN=1  -> show what would happen
+BUMP ?= minor
+release:
+	DRY_RUN=$(DRY_RUN) ./release.sh $(BUMP)
 
 ## bench: serve a synthetic graph of BENCH_NODES nodes (no Neo4j, no credentials needed)
 ##        e.g. make bench BENCH_NODES=25000 — then open the URL and read the console timings
