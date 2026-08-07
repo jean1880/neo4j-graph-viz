@@ -53,3 +53,7 @@ coverage/
 npm-debug.log*
 yarn-error.log*
 .npm/
+
+# Local engineering notes: references the NAS / Dockerman / ansible-homelab, same reason
+# CLAUDE.md is ignored here. Keep deployment specifics out of the public repo.
+docs/performance-plan.md

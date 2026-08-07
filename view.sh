@@ -35,7 +35,19 @@ cargo build --release
 
 echo "Serving http://localhost:${PORT}/  (Ctrl-C to stop)"
 # Open the browser once the server has had a moment to bind (exec replaces this shell).
+# `open` is macOS, `xdg-open` is Linux — this script runs on both.
 if command -v xdg-open >/dev/null 2>&1; then
-  (sleep 2 && xdg-open "http://localhost:${PORT}/" >/dev/null 2>&1) &
+  BROWSER_OPEN=xdg-open
+elif command -v open >/dev/null 2>&1; then
+  BROWSER_OPEN=open
 fi
-exec env BIND=127.0.0.1 PORT="${PORT}" ./target/release/neo4j-graph-viz
+if [[ -n "${BROWSER_OPEN:-}" ]]; then
+  (sleep 2 && "$BROWSER_OPEN" "http://localhost:${PORT}/" >/dev/null 2>&1) &
+fi
+
+# Local dev talks over loopback, where compressing the payload costs CPU on both ends to shorten
+# a transfer that is already effectively free. The deployed container leaves it on (it sits
+# behind the Nginx vhost, where it is a clear win). Override by exporting GRAPH_COMPRESSION=1.
+exec env BIND=127.0.0.1 PORT="${PORT}" \
+  GRAPH_COMPRESSION="${GRAPH_COMPRESSION:-0}" \
+  ./target/release/neo4j-graph-viz

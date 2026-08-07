@@ -1,25 +1,43 @@
-import { computed, markRaw, ref, shallowRef } from 'vue'
-import type { GraphData, GraphLink, GraphNode, Neighbour } from '../types'
+import { computed, markRaw, ref, shallowRef, watch } from 'vue'
+import { apiUrl } from '../api'
+import { searchVisible } from './useSearch'
+import { dimensions } from './useViewMode'
+import type {
+  GraphData,
+  GraphLink,
+  GraphNode,
+  LoadPerf,
+  Neighbour,
+  RawGraphNode,
+} from '../types'
 
 // Singleton shared state — every component that calls useGraph() sees the same graph,
 // selection, hover, search query, and hidden-label set (no prop drilling for a small app).
 //
-// `data` is a shallowRef over a markRaw'd payload on purpose: d3-force and force-graph mutate
-// every node (x/y/vx/vy/__indexColor) and rewrite each link's source/target in place, ~60×/s.
-// Deep reactivity over that is both a hot-path proxy tax and a source of spurious computed
-// invalidation. The graph is only ever replaced wholesale, so identity reactivity is enough.
+// `data` is a shallowRef over a markRaw'd payload on purpose: at 25k nodes and 75k links, deep
+// reactivity would wrap every one of them in a proxy for no benefit — the renderer reads them
+// into typed arrays and never mutates them. The graph is only ever replaced wholesale, so
+// identity reactivity is all that is needed.
 const data = shallowRef<GraphData>(markRaw({ nodes: [], links: [] }))
 const loading = ref(false)
 const error = ref<string | null>(null)
 const hidden = ref<Set<string>>(new Set())
 const query = ref('')
+/** Timings for the most recent load — the measurement baseline for the performance work. */
+const perf = ref<LoadPerf | null>(null)
+
+/**
+ * Drawn node radius. Stamped onto each node at load rather than computed per frame, and shared
+ * so the canvas paints its hit area from exactly the number it drew.
+ */
+export const radiusOf = (deg: number) => 2 + Math.sqrt(deg)
 
 // --- interaction state ---------------------------------------------------------------------
 // Exactly two inputs drive every highlight in the app:
 //   selectedId — sticky; only an explicit click, neighbour jump, or search hit changes it.
-//   hoveredId  — transient preview; owned by the canvas, which decides when a reported hover
-//                is trustworthy (force-graph re-runs hit detection every frame and reports a
-//                stream of hover-out events during zoom/pan — see GraphCanvas).
+//   hoveredId  — transient preview; owned by the canvas. Hit detection is GPU picking now, so
+//                a reported hover is simply true — the old machinery that buffered hovers
+//                through a camera gesture (against a stale, throttled hit map) is gone.
 // Everything visual derives from `focusId`, so a hover that ends falls back to the selection
 // instead of dropping the highlight. That is what keeps a clicked node's neighbourhood lit
 // through a zoom, a pan, a drag, or the cursor leaving the window.
@@ -33,19 +51,9 @@ let revealSeq = 0
 const EMPTY_IDS: ReadonlySet<string> = new Set()
 const EMPTY_LINKS: ReadonlySet<GraphLink> = new Set()
 
-/**
- * Resolve the API against the document the SPA was served from, so the app works unchanged at
- * `/` or under any proxy prefix (`/tools/graph/`). A root-absolute '/api/graph' would 404 on
- * every path-prefixed deployment, and baking the prefix in at build time would mean one image
- * per mount point.
- */
-function apiUrl(path: string, params?: Record<string, string>): string {
-  const url = new URL(path, document.baseURI)
-  for (const [k, v] of Object.entries(params ?? {})) url.searchParams.set(k, v)
-  return url.href
-}
 
-/** Resolve a link end to a node id (force-graph swaps ids for node objects once simulating). */
+/** Resolve a link end to a node id. Endpoints are plain ids now, but the object form is kept
+ *  tolerated so a caller passing a resolved node still works. */
 function linkEnd(end: string | GraphNode): string {
   return typeof end === 'object' ? end.id : end
 }
@@ -119,11 +127,14 @@ const hoveredNode = computed<GraphNode | null>(() =>
   hoveredId.value ? (nodeById.value.get(hoveredId.value) ?? null) : null,
 )
 
-/** A node can hold focus only while it still exists and its label is not hidden. */
+/** A node can hold focus only while it is still on the canvas: it exists, its label is not
+ *  hidden, and it survived any active search. */
 function focusable(id: string | null): boolean {
   if (!id) return false
   const n = nodeById.value.get(id)
-  return n !== undefined && !hidden.value.has(n.label)
+  if (n === undefined || hidden.value.has(n.label)) return false
+  const visible = searchVisible.value
+  return visible === null || visible.has(id)
 }
 
 /** Drop any selection/hover that a reload or a legend toggle just invalidated. */
@@ -131,6 +142,10 @@ function reconcileFocus() {
   if (!focusable(selectedId.value)) selectedId.value = null
   if (!focusable(hoveredId.value)) hoveredId.value = null
 }
+
+// A search changes which nodes are on the canvas, so a selection or hover can be invalidated
+// by one. Observing it here keeps the dependency one-way: useSearch knows nothing about us.
+watch(searchVisible, () => reconcileFocus())
 
 export function useGraph() {
   /**
@@ -143,9 +158,46 @@ export function useGraph() {
     loading.value = true
     error.value = null
     try {
-      const res = await fetch(apiUrl('api/graph', opts.refresh ? { refresh: '1' } : undefined))
+      // Transfer, parse, and stamp are timed separately because they have different fixes:
+      // transfer is a payload-size problem, parse is what a binary format removes, and stamp is
+      // ours. Reading the body as text first is what makes the parse measurable at all.
+      const t0 = performance.now()
+      // The backend lays out per dimensionality — a 3D layout is a genuinely different
+      // computation, not a projection — so the mode is part of the request.
+      const params: Record<string, string> = { dims: String(dimensions.value) }
+      if (opts.refresh) params.refresh = '1'
+      const res = await fetch(apiUrl('api/graph', params))
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      data.value = markRaw((await res.json()) as GraphData)
+      const text = await res.text()
+      const t1 = performance.now()
+      const parsed = JSON.parse(text) as { nodes: RawGraphNode[]; links: GraphLink[] }
+      const t2 = performance.now()
+
+      // Stamp the per-frame-constant derived fields once, here, instead of recomputing them for
+      // every node on every animation frame.
+      const nodes = parsed.nodes as GraphNode[]
+      for (const n of nodes) {
+        n.nameLower = n.name.toLowerCase()
+        n.r = radiusOf(n.deg)
+        // World radius is derived from the layout scale in buildBuffers, once it is known.
+        n.rw = 0
+        n.z ??= 0
+      }
+      const t3 = performance.now()
+
+      data.value = markRaw({ nodes, links: parsed.links })
+      perf.value = {
+        transferMs: t1 - t0,
+        parseMs: t2 - t1,
+        stampMs: t3 - t2,
+        totalMs: t3 - t0,
+        // Content-Length is absent under chunked/compressed responses; the text length is a
+        // good enough stand-in for an ASCII-dominated payload.
+        bytes: Number(res.headers.get('content-length')) || text.length,
+        nodes: nodes.length,
+        links: parsed.links.length,
+      }
+      console.info('[graph] load', perf.value)
       reconcileFocus()
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e)
@@ -192,9 +244,8 @@ export function useGraph() {
 
   /**
    * Select a node. `reveal` is opt-in because a click on the canvas already has the node under
-   * the cursor — moving the camera there would yank the view out from under the user (and, since
-   * force-graph treats any transform change as a pointer drag, would also cancel the hover).
-   * Jumps that originate off-canvas (neighbour chips, search) pass `reveal: true`.
+   * the cursor — moving the camera there would yank the view out from under the user. Jumps
+   * that originate off-canvas (neighbour chips, search) pass `reveal: true`.
    */
   function select(node: GraphNode, opts: { reveal?: boolean } = {}) {
     selectedId.value = node.id
@@ -225,8 +276,8 @@ export function useGraph() {
     data,
     loading,
     error,
+    perf,
     hidden,
-    query,
     selectedId,
     selectedNode,
     hoveredId,

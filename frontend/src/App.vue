@@ -3,6 +3,7 @@ import { onBeforeUnmount, onMounted, ref } from 'vue'
 import GraphCanvas from './components/GraphCanvas.vue'
 import HudPanel from './components/HudPanel.vue'
 import NodeDetail from './components/NodeDetail.vue'
+import ViewModeToggle from './components/ViewModeToggle.vue'
 import { useGraph } from './composables/useGraph'
 
 // The tooltip reads the shared hover state rather than keeping its own copy — one owner for
@@ -35,6 +36,7 @@ onBeforeUnmount(() => {
 <template>
   <GraphCanvas />
   <HudPanel />
+  <ViewModeToggle />
   <NodeDetail />
 
   <div v-if="hoveredNode" class="tip" :style="{ left: `${tipX}px`, top: `${tipY}px` }">
@@ -71,7 +73,7 @@ onBeforeUnmount(() => {
   bottom: 12px;
   right: var(--space-4);
   color: var(--text-dim);
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   z-index: 10;
 }
 </style>

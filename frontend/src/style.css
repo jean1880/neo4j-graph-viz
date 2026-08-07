@@ -13,6 +13,26 @@ body {
   overflow: hidden;
 }
 
+/* ---- Type scale -----------------------------------------------------------------------------
+   A single multiplier over @nuvek/ui's type tokens.
+
+   The library's scale is sound; it is just set a step small for a dense, dark, data-heavy view
+   read at arm's length. Scaling every step by the same factor raises everything without
+   flattening the hierarchy — the ratios between xs/sm/base/lg are preserved exactly, which is
+   what a per-token nudge (+1px each) would have quietly destroyed.
+
+   Deliberately overridden HERE rather than in @nuvek/ui: that library is shared, and this is a
+   preference of this viewer, not a defect in the design system. `--text-scale` is the one knob. */
+:root {
+  --text-scale: 1.1;
+  --text-xs: calc(0.75rem * var(--text-scale));
+  --text-sm: calc(0.875rem * var(--text-scale));
+  --text-base: calc(1rem * var(--text-scale));
+  --text-lg: calc(1.125rem * var(--text-scale));
+  --text-xl: calc(1.25rem * var(--text-scale));
+  --text-2xl: calc(1.5rem * var(--text-scale));
+}
+
 /* Lets `block-size: auto` be transitioned — used by the HUD's collapsible type legend. */
 :root {
   interpolate-size: allow-keywords;

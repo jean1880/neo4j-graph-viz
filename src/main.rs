@@ -1,98 +1,108 @@
 //! Rust/axum backend for the Neo4j graph viewer.
 //!
-//! Serves the built Vue SPA and a single `GET /api/graph` endpoint (the graph as
-//! `{nodes, links}`), cached in memory with an hourly TTL and a `?refresh=1` override. The
-//! Neo4j credentials live only here — the browser never sees a Bolt endpoint or a password.
+//! Serves the built Vue SPA plus three endpoints:
 //!
-//! NOTE: `/api/graph` is unauthenticated and returns every node and property the fetch
-//! options admit. Put an authenticating proxy in front of it on any network where the graph
+//! - `GET /api/graph` — the whole graph as `{nodes, links}`, **laid out**, without properties
+//! - `GET /api/node/{id}` — one node *with* its properties
+//! - `GET /api/search` — the subgraph related to a query
+//!
+//! The Neo4j credentials live only here — the browser never sees a Bolt endpoint or a password.
+//!
+//! Module ownership: [`config`] reads the environment, [`state`] owns the cached snapshot and
+//! everything expensive that produces it, [`api`] is the HTTP surface, and [`graph`],
+//! [`layout`], [`search`] and [`embed`] each own one problem.
+//!
+//! NOTE: these endpoints are unauthenticated and return every node and property the fetch
+//! options admit. Put an authenticating proxy in front of them on any network where the graph
 //! contents are not public, and use `GRAPH_SKIP_PROPS` to withhold sensitive properties.
 
+mod api;
+mod config;
+mod embed;
 mod graph;
+mod layout;
+mod search;
+mod state;
+mod util;
 
-use std::collections::HashMap;
-use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use anyhow::{Context, Result};
-use axum::{
-    extract::{Extension, Query},
-    http::StatusCode,
-    response::IntoResponse,
-    routing::get,
-    Json, Router,
-};
-use neo4rs::{ConfigBuilder, Graph};
+use axum::{routing::get, Router};
 use tokio::sync::RwLock;
 use tower_http::compression::CompressionLayer;
 
-use nuvek_web::{config, health, serve, telemetry};
+use nuvek_web::{config as web_config, health, serve, telemetry};
 
-use crate::graph::{FetchOptions, GraphData};
-
-/// Shared server state: the Neo4j handle plus an in-memory graph cache.
-/// The cached graph is `Arc`-wrapped so a cache hit is a refcount bump, not a full deep clone
-/// of the whole node/link payload on every request.
-struct AppState {
-    graph: Graph,
-    opts: FetchOptions,
-    cache: RwLock<Option<(Instant, Arc<GraphData>)>>,
-    ttl: Duration,
-}
+use crate::embed::EmbedOptions;
+use crate::graph::FetchOptions;
+use crate::search::SearchOptions;
+use crate::state::AppState;
 
 #[tokio::main]
 async fn main() -> Result<()> {
     telemetry::init();
 
-    // Connection settings are runtime config only — NEVER baked into the image or binary, so
-    // no endpoint or credential ships in the published image. NEO4J_HOST takes a full URI, so
-    // `neo4j+s://…` (TLS / Aura) works without a code change.
-    let uri = config::required_env("NEO4J_HOST")
-        .context("NEO4J_HOST not set — inject it at runtime; never bake an endpoint in")?;
-    let user = config::env_or("NEO4J_USER", "neo4j");
-    let pass = config::required_env("NEO4J_PASSWORD")
-        .context("NEO4J_PASSWORD not set — inject it at runtime (see .env.example)")?;
-    let database = config::env_or("NEO4J_DATABASE", "neo4j");
     // How long a fetched graph is reused. 0 disables caching (every request refetches).
-    let ttl_secs: u64 = config::env_or("GRAPH_CACHE_TTL_SECS", "3600")
+    let ttl_secs: u64 = web_config::env_or("GRAPH_CACHE_TTL_SECS", "3600")
         .parse()
         .context("GRAPH_CACHE_TTL_SECS must be a non-negative integer")?;
     // Local dev binds 127.0.0.1:8901 (view.sh); the container overrides BIND=0.0.0.0 PORT=8080.
-    let bind = config::env_or("BIND", "127.0.0.1");
-    let port = config::env_or("PORT", "8901");
+    let bind = web_config::env_or("BIND", "127.0.0.1");
+    let port = web_config::env_or("PORT", "8901");
 
     let opts = FetchOptions::from_env()?;
+    let layout = config::layout_options_from_env()?;
+    let source = config::build_source().await?;
 
-    let neo_config = ConfigBuilder::new()
-        .uri(&uri)
-        .user(&user)
-        .password(&pass)
-        .db(database.as_str())
-        .build()
-        .context("invalid Neo4j connection config")?;
-    let graph = Graph::connect(neo_config)
-        .await
-        .context("neo4rs failed to connect / authenticate")?;
+    let embed_opts = EmbedOptions::from_env()?;
+    if embed_opts.enabled() {
+        tracing::info!(
+            model = %embed_opts.model,
+            max_nodes = embed_opts.max_nodes,
+            "semantic search enabled (SEARCH_EMBED_URL is set)"
+        );
+    }
 
     let state = Arc::new(AppState {
-        graph,
+        source,
         opts,
-        cache: RwLock::new(None),
+        layout,
+        search: SearchOptions::default(),
+        embed: embed_opts,
+        cache: RwLock::new(HashMap::new()),
         ttl: Duration::from_secs(ttl_secs),
+        refreshing: Mutex::new(HashSet::new()),
+        embeddings: RwLock::new(None),
     });
 
     let api = Router::new()
-        .route("/api/graph", get(handler_graph))
+        .route("/api/graph", get(api::handler_graph))
+        .route("/api/node/{id}", get(api::handler_node))
+        .route("/api/search", get(api::handler_search))
         .merge(health::routes())
-        .layer(Extension(state));
+        .layer(axum::Extension(state));
 
-    let app = serve::attach_spa(
+    let mut app = serve::attach_spa(
         api,
         serve::SpaAssets::detect(&["/app/dist", "frontend/dist"]),
-    )
-    // Applied outside the SPA layer so the static bundle is compressed too. Negotiated via
-    // Accept-Encoding, so a client that cannot decompress still gets plain JSON.
-    .layer(CompressionLayer::new());
+    );
+
+    // Compression is a clear win behind the NAS Nginx vhost and a pessimization over loopback,
+    // where it burns CPU on both ends to shorten a transfer that is already effectively free.
+    // Default on so the deployed path is unchanged; `view.sh` turns it off for local dev.
+    // Accepts the same spellings as `?refresh=` — an operator who writes `GRAPH_COMPRESSION=false`
+    // means it, and silently leaving compression on would be a confusing way to disagree.
+    let compression = util::truthy(&web_config::env_or("GRAPH_COMPRESSION", "1"));
+    if compression {
+        // Applied outside the SPA layer so the static bundle is compressed too. Negotiated via
+        // Accept-Encoding, so a client that cannot decompress still gets plain JSON.
+        app = app.layer(CompressionLayer::new());
+    } else {
+        tracing::info!("response compression disabled (GRAPH_COMPRESSION=0)");
+    }
 
     let addr = format!("{bind}:{port}");
     tracing::info!("neo4j-graph-viz listening on http://{addr}");
@@ -101,40 +111,4 @@ async fn main() -> Result<()> {
         .with_context(|| format!("failed to bind {addr}"))?;
     axum::serve(listener, app).await.context("server error")?;
     Ok(())
-}
-
-/// `GET /api/graph[?refresh=1]` — the whole graph as `{nodes, links}`, cache-first.
-async fn handler_graph(
-    Extension(state): Extension<Arc<AppState>>,
-    Query(params): Query<HashMap<String, String>>,
-) -> impl IntoResponse {
-    let force = matches!(
-        params.get("refresh").map(String::as_str),
-        Some("1" | "true")
-    );
-
-    if !force {
-        let guard = state.cache.read().await;
-        if let Some((at, data)) = guard.as_ref() {
-            if at.elapsed() < state.ttl {
-                return Json(Arc::clone(data)).into_response();
-            }
-        }
-    }
-
-    match graph::fetch(&state.graph, &state.opts).await {
-        Ok(data) => {
-            let data = Arc::new(data);
-            *state.cache.write().await = Some((Instant::now(), Arc::clone(&data)));
-            Json(data).into_response()
-        }
-        Err(e) => {
-            tracing::error!(error = ?e, "graph fetch failed");
-            // Stale-if-error: serve the last good snapshot rather than a hard failure.
-            if let Some((_, data)) = state.cache.read().await.as_ref() {
-                return Json(Arc::clone(data)).into_response();
-            }
-            (StatusCode::BAD_GATEWAY, "graph fetch failed").into_response()
-        }
-    }
 }

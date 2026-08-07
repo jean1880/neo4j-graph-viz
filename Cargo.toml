@@ -1,6 +1,6 @@
 [package]
 name = "neo4j-graph-viz"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "Rust/axum backend for a force-directed Neo4j graph viewer."
 license = "MIT"
@@ -9,6 +9,11 @@ repository = "https://github.com/jean1880/neo4j-graph-viz"
 [dependencies]
 neo4rs = "0.8"
 tokio = { version = "1", features = ["full"] }
+# The force layout is computed here rather than in the browser, where it ran single-threaded on
+# the main thread and cost ~8 fps for the fifteen seconds it took to cool. rayon spreads each
+# tick across every core; the layout is written as a gather so the result stays deterministic
+# regardless of how work is scheduled.
+rayon = "1"
 anyhow = "1.0"
 axum = "0.8"
 # "rc" enables Serialize for Arc<GraphData> (the cached payload). Serialize-only use — the
@@ -21,3 +26,10 @@ tracing = "0.1"
 tower-http = { version = "0.6", features = ["compression-gzip", "compression-br"] }
 # Shared backend scaffold — pinned to a tag on the public GitHub repo (no auth needed).
 nuvek-web = { git = "https://github.com/jean1880/nuvek-web.git", tag = "v0.1.1" }
+# Fuzzy matching for /api/search — the fzf-quality matcher from Helix. Search has to run
+# server-side now that node properties do not travel with the graph payload, and a substring
+# test is not enough: "graphsync" should find "graph-sync", and a typo should still hit.
+nucleo-matcher = "0.3.1"
+# Only used by the OPTIONAL semantic-search tier, to call an embedding endpoint. With
+# SEARCH_EMBED_URL unset — which is how the published image ships — no request is ever made.
+reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls", "http2"] }
