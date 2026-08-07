@@ -1,8 +1,16 @@
 <script setup lang="ts">
 import { useGraph } from '../composables/useGraph'
+import { useSearch } from '../composables/useSearch'
 import TypeLegend from './TypeLegend.vue'
 
-const { stats, query, loading, error, load } = useGraph()
+const { stats, loading, error, load } = useGraph()
+const { query, searchResult, searching, searchError, breadth, runSearch, clearSearch } =
+  useSearch()
+
+// Changing breadth re-runs the current query — the knob is meaningless if you have to retype.
+function onBreadth() {
+  if (query.value.trim()) void runSearch(query.value)
+}
 
 // Build-time branding: set VITE_APP_TITLE to rename the viewer without touching a component.
 const title = import.meta.env.VITE_APP_TITLE || 'Graph Viewer'
@@ -38,11 +46,92 @@ const refresh = () => load({ refresh: true })
       autocomplete="off"
       aria-label="Search nodes"
     />
+
+    <!-- Search state. Unlike the legend, search hits the server and can fail, come back empty,
+         or be cut short — each of which the user has to be told about rather than left guessing
+         why the canvas looks the way it does. -->
+    <div v-if="query.trim()" class="srch">
+      <span v-if="searching" class="muted">searching…</span>
+      <span v-else-if="searchError" class="err">⚠ {{ searchError }}</span>
+      <template v-else-if="searchResult">
+        <span v-if="searchResult.visible.length === 0" class="muted">no matches</span>
+        <span v-else>
+          {{ searchResult.visible.length }} shown ·
+          {{ searchResult.matches.length }} match{{ searchResult.matches.length === 1 ? '' : 'es' }}
+          <span v-if="searchResult.semantic" class="tagged" title="Embedding similarity contributed">
+            semantic
+          </span>
+          <span v-if="searchResult.truncated" class="warn" title="Result hit the server ceiling">
+            truncated
+          </span>
+        </span>
+        <button type="button" class="clear" @click="clearSearch">clear</button>
+      </template>
+
+      <label class="breadth">
+        breadth
+        <input
+          v-model.number="breadth"
+          type="range"
+          min="0"
+          max="1"
+          step="0.05"
+          aria-label="How far relatedness spreads from a match"
+          @change="onBreadth"
+        />
+      </label>
+    </div>
+
     <TypeLegend />
   </div>
 </template>
 
 <style scoped>
+.srch {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.srch .muted {
+  color: var(--text-dim);
+}
+.srch .err {
+  color: var(--danger, #f87171);
+}
+.tagged,
+.warn {
+  padding: 0 5px;
+  border-radius: 20px;
+  border: 1px solid var(--border-alt);
+  font-size: var(--text-xs);
+}
+.warn {
+  color: var(--warning, #fbbf24);
+}
+.clear {
+  border: none;
+  background: transparent;
+  color: var(--primary);
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-decoration: underline;
+}
+.breadth {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  inline-size: 100%;
+  color: var(--text-dim);
+}
+.breadth input {
+  flex: 1;
+  min-inline-size: 0;
+}
 .hud {
   top: var(--space-4);
   left: var(--space-4);
@@ -63,7 +152,7 @@ h1 {
   align-items: center;
   gap: var(--space-2);
   color: var(--text-muted);
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   margin-bottom: var(--space-3);
 }
 .err {

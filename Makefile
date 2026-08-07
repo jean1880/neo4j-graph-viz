@@ -61,6 +61,20 @@ gate:
 lint:
 	shellcheck view.sh smoke.sh
 
+## bench: serve a synthetic graph of BENCH_NODES nodes (no Neo4j, no credentials needed)
+##        e.g. make bench BENCH_NODES=25000 — then open the URL and read the console timings
+BENCH_NODES ?= 25000
+BENCH_EDGES ?= 3
+BENCH_PORT  ?= 8901
+bench:
+	cd frontend && npm run build
+	cargo build --release
+	@echo "Serving a $(BENCH_NODES)-node synthetic graph on http://127.0.0.1:$(BENCH_PORT)/"
+	@echo "Load timings are logged to the browser console as '[graph] load'."
+	GRAPH_FIXTURE_NODES=$(BENCH_NODES) GRAPH_FIXTURE_EDGES=$(BENCH_EDGES) \
+	GRAPH_COMPRESSION=0 BIND=127.0.0.1 PORT=$(BENCH_PORT) \
+	./target/release/neo4j-graph-viz
+
 # --- container ------------------------------------------------------------------------------
 
 ## build: build the container image locally

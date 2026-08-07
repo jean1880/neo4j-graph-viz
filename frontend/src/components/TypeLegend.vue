@@ -98,20 +98,20 @@ summary:focus-visible {
 h2 {
   margin: 0;
   flex: 1;
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   text-transform: uppercase;
   letter-spacing: 0.8px;
   color: var(--text-muted);
   font-weight: 600;
 }
 .off-ct {
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--warning, var(--text-dim));
   font-variant-numeric: tabular-nums;
 }
 .tip {
   margin: var(--space-2) 0 0;
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--text-dim);
 }
 .reset {
@@ -168,7 +168,7 @@ h2 {
 .ct {
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
 }
 
 /* Progressive enhancement: browsers with ::details-content animate the open/close, the rest

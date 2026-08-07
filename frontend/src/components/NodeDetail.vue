@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { apiUrl } from '../api'
 import { useGraph } from '../composables/useGraph'
 import { colorFor } from '../color'
-import type { GraphNode } from '../types'
+import type { GraphNode, NodeDetailData } from '../types'
 
-const { selectedNode, clearSelection, neighboursOf, select } = useGraph()
+const { selectedNode, selectedId, clearSelection, neighboursOf, select } = useGraph()
 
 const neighbours = computed(() =>
   selectedNode.value ? neighboursOf(selectedNode.value) : [],
@@ -16,10 +17,55 @@ const relSummary = computed(() => {
   return [...byType.entries()].sort((a, b) => b[1] - a[1])
 })
 
+// --- lazily fetched properties ---------------------------------------------------------------
+// Properties no longer travel with the graph payload (they dominated it at scale), so the panel
+// fetches the selected node's own record. Everything else the panel shows — name, label, degree,
+// neighbour chips — still comes from the graph and renders immediately; only this table waits.
+const detail = ref<NodeDetailData | null>(null)
+const detailError = ref<string | null>(null)
+const detailLoading = ref(false)
+// Selections can change faster than the network answers (arrow-key or chip walking), and
+// responses are not guaranteed to arrive in order — so each request cancels the one before it.
+let inFlight: AbortController | null = null
+
+async function loadDetail(id: string | null) {
+  inFlight?.abort()
+  inFlight = null
+  detail.value = null
+  detailError.value = null
+  if (!id) {
+    detailLoading.value = false
+    return
+  }
+
+  const ctrl = new AbortController()
+  inFlight = ctrl
+  detailLoading.value = true
+  try {
+    const res = await fetch(apiUrl(`api/node/${encodeURIComponent(id)}`), {
+      signal: ctrl.signal,
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const body = (await res.json()) as NodeDetailData
+    // A late response for a node the user has already moved off must not overwrite the panel.
+    if (ctrl.signal.aborted || selectedId.value !== id) return
+    detail.value = body
+  } catch (e) {
+    if (ctrl.signal.aborted) return
+    detailError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    if (inFlight === ctrl) {
+      inFlight = null
+      detailLoading.value = false
+    }
+  }
+}
+
+watch(selectedId, (id) => void loadDetail(id), { immediate: true })
+onBeforeUnmount(() => inFlight?.abort())
+
 const propRows = computed(() =>
-  selectedNode.value
-    ? Object.entries(selectedNode.value.props).filter(([k]) => k !== 'name')
-    : [],
+  detail.value ? Object.entries(detail.value.props).filter(([k]) => k !== 'name') : [],
 )
 
 const chips = computed(() => neighbours.value.slice(0, 60))
@@ -49,7 +95,15 @@ function goto(node: GraphNode | undefined) {
     </div>
 
     <div class="sec">Properties</div>
-    <table>
+    <!-- Fetched per node, so this section has loading and error states the rest of the panel
+         does not. Skeleton rows rather than a spinner keep the panel height from jumping. -->
+    <div v-if="detailLoading" class="skel" aria-busy="true" aria-label="Loading properties">
+      <span v-for="i in 3" :key="i" class="skel-row"></span>
+    </div>
+    <div v-else-if="detailError" class="muted err">
+      could not load properties — {{ detailError }}
+    </div>
+    <table v-else>
       <tbody>
         <tr v-if="propRows.length === 0">
           <td class="v muted">no properties</td>
@@ -117,9 +171,15 @@ h3 {
 .close {
   cursor: pointer;
   color: var(--text-muted);
-  font-size: 17px;
+  font-size: var(--text-xl);
   line-height: 1;
-  padding: 0 4px;
+  /* WCAG 2.5.8 asks for 24x24 CSS px on pointer targets; a bare glyph is well under it. */
+  min-width: 28px;
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
   border: none;
   background: transparent;
   border-radius: 5px;
@@ -131,13 +191,13 @@ h3 {
 }
 .meta {
   color: var(--text-muted);
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   margin-bottom: 6px;
 }
 .sec {
   text-transform: uppercase;
   letter-spacing: 0.8px;
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--text-dim);
   margin: 13px 0 6px;
 }
@@ -163,14 +223,44 @@ td.v {
 .muted {
   color: var(--text-dim);
 }
+.err {
+  font-size: var(--text-sm);
+}
+.skel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.skel-row {
+  height: 11px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+.skel-row:nth-child(2) {
+  width: 80%;
+}
+.skel-row:nth-child(3) {
+  width: 55%;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .skel-row {
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    50% {
+      opacity: 0.45;
+    }
+  }
+}
 .rels {
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   margin-bottom: var(--space-2);
 }
 .nb {
   display: inline-block;
   margin: 2px 4px 2px 0;
-  padding: 2px 8px;
+  padding: 4px 10px;
+  min-height: 24px;
   border-radius: 20px;
   background: var(--surface);
   border: 1px solid var(--border-alt);
@@ -178,7 +268,7 @@ td.v {
   font-family: inherit;
   line-height: 1.4;
   cursor: pointer;
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
 }
 .nb:hover {
   border-color: var(--primary);

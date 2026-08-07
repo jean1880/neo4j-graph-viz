@@ -57,6 +57,39 @@ else
   bad "/api/graph returned nothing"
 fi
 
+# --- 3b. node detail ------------------------------------------------------------------------
+# Properties are served per node rather than in the graph payload, so the detail panel is only
+# as good as this route. Check a real id resolves and that an unknown one 404s rather than
+# 200-ing with an empty body — a detail endpoint that always succeeds is worse than none.
+if [[ -n "$body" ]]; then
+  node_id="$(python3 -c '
+import sys, json
+n = json.loads(sys.stdin.read()).get("nodes", [])
+print(n[0]["id"] if n else "")
+' <<<"$body" 2>/dev/null || true)"
+
+  if [[ -n "$node_id" ]]; then
+    detail="$(curl -fsS --get --data-urlencode "@-" /dev/null 2>/dev/null <<<"" || true)"
+    # curl cannot urlencode a path segment, so encode it here (element ids contain ':').
+    enc_id="$(python3 -c 'import sys,urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$node_id")"
+    detail="$(curl -fsS "${BASE}/api/node/${enc_id}" 2>/dev/null || true)"
+    if grep -q '"props"' <<<"$detail"; then
+      ok "/api/node/{id} serves properties"
+    else
+      bad "/api/node/{id} did not return a props object for ${node_id}"
+    fi
+
+    code="$(curl -fsS -o /dev/null -w '%{http_code}' "${BASE}/api/node/definitely-not-a-node" 2>/dev/null || true)"
+    if [[ "$code" == "404" ]]; then
+      ok "/api/node/{id} 404s on an unknown id"
+    else
+      bad "/api/node/{id} returned ${code:-nothing} for an unknown id (expected 404)"
+    fi
+  else
+    huh "could not read a node id from /api/graph — skipped the detail checks"
+  fi
+fi
+
 # --- 4. compression -------------------------------------------------------------------------
 enc="$(curl -fsS -o /dev/null -D- -H 'Accept-Encoding: gzip, br' "${BASE}/api/graph" 2>/dev/null |
        tr -d '\r' | awk -F': ' 'tolower($1)=="content-encoding"{print $2}')"
@@ -66,7 +99,10 @@ if [[ -n "$enc" ]]; then
   ok "compressed (${enc})"
   note "$(printf '%s bytes -> %s bytes' "$raw" "$comp")"
 else
-  bad "no content-encoding negotiated"
+  # Compression is a deliberate config choice, not a defect: it is a clear win behind the Nginx
+  # vhost and a pessimization over loopback, where view.sh turns it off. Warn, never fail.
+  huh "no content-encoding negotiated"
+  note "expected behind a proxy; over loopback view.sh sets GRAPH_COMPRESSION=0"
 fi
 
 # --- 5. payload sanity ----------------------------------------------------------------------

@@ -5,22 +5,39 @@ the code, the code wins; fix this file.
 
 ## What this is
 
-A force-directed viewer for a Neo4j graph. A **Rust/axum backend** reads the graph over Bolt
-and serves it as `GET /api/graph`; a **Vue 3 SPA** renders it with
-[vasturiano/force-graph](https://github.com/vasturiano/force-graph).
+A force-directed viewer for a Neo4j graph. A **Rust/axum backend** reads the graph over Bolt,
+**lays it out**, and serves it as `GET /api/graph`; a **Vue 3 SPA** renders it on the GPU with
+[deck.gl](https://deck.gl).
 
 It exists because Neo4j Browser only draws query-result subgraphs and Bloom is Enterprise-only.
 This renders a persistent, searchable "map of everything": pan/zoom, hover to highlight a
-node's neighbourhood, click for a property panel, filter by label, search by name.
+node's neighbourhood, click for a property panel, filter by label, search by meaning.
+
+Three things about the division of labour matter more than anything else here, because each was
+a deliberate move *away* from the obvious design:
+
+1. **The layout runs on the server**, not the client. In-browser d3-force cost ~8 fps for the
+   fifteen seconds it took to cool, on every page load, in every tab. Now it is native,
+   multicore, and computed once per cache fill.
+2. **The client never iterates nodes inside a render loop.** Everything drawn comes from typed
+   arrays uploaded to the GPU; interaction state rewrites a buffer in one linear pass. Canvas2d
+   drawing cost ~450 ms per repaint at 25k nodes.
+3. **Node properties and search both live server-side.** Property bags dominated the payload, so
+   they moved to `GET /api/node/{id}` — which in turn is why search had to become
+   `GET /api/search` rather than a client-side filter.
 
 ## Layout
 
 | Path | What lives there |
 | --- | --- |
 | `src/main.rs` | Service wiring: config from env, Neo4j connect, router, in-memory cache, bind |
-| `src/graph.rs` | Bolt fetch + the `{nodes, links}` transform, and `FetchOptions` (all shaping config) |
-| `frontend/src/composables/useGraph.ts` | Singleton store: graph data, selection, hover, filters |
-| `frontend/src/components/` | `GraphCanvas` (force-graph host), `HudPanel`, `TypeLegend`, `NodeDetail` |
+| `src/graph/` | Bolt fetch, the `{nodes, links}` transform, CSR adjacency, shaping, and the benchmark fixture |
+| `src/layout/` | Force layout: Fruchterman–Reingold, rayon-parallel, deterministic. `quadtree` for 2D, `octree` for 3D |
+| `src/search/` | Fuzzy + field-weighted scoring, then score-decay expansion over the graph |
+| `src/embed.rs` | Optional semantic tier (`SEARCH_EMBED_URL`); inert unless configured |
+| `frontend/src/composables/` | Singleton stores: `useGraph` (data/selection/hover), `useSearch`, `useViewMode` |
+| `frontend/src/graph/` | Render modules: `buffers`, `camera`, `labels`, `layers`, `simulation`, `state` |
+| `frontend/src/components/` | `GraphCanvas` (deck.gl host), `HudPanel`, `TypeLegend`, `NodeDetail` |
 | `Dockerfile` | 3-stage build: SPA (node) → binary (rust) → slim runtime serving both |
 | `view.sh` | Local dev entry point (builds both, binds loopback, opens a browser) |
 
@@ -47,10 +64,14 @@ Nothing about the target schema is compiled in:
 - `GRAPH_SKIP_PROPS` — property keys never sent to the browser (default `embedding,vector`).
 - `GRAPH_MAX_NODES` / `GRAPH_MAX_RELS` / `GRAPH_MAX_PROP_CHARS` — fetch caps.
 - `GRAPH_CACHE_TTL_SECS` — how long a fetched graph is reused (`0` disables the cache).
+- `GRAPH_LAYOUT_*` — layout tuning (iterations, theta, scale, gravity, seed).
+- `SEARCH_EMBED_*` — the optional semantic-search tier; entirely inert unless `SEARCH_EMBED_URL`
+  is set, which is how the published image ships.
 
 The queries use `elementId()`, so **Neo4j 5+** is required; on 4.x that function does not exist.
 
-Frontend build-time: `VITE_APP_TITLE` (tab + HUD heading), `VITE_API_TARGET` (dev proxy).
+Frontend build-time: `VITE_APP_TITLE` (tab + HUD heading), `VITE_DEFAULT_VIEW_MODE` (`2`/`3`),
+`VITE_API_TARGET` (dev proxy).
 
 ## Build, run, test
 
@@ -89,6 +110,19 @@ Run the image with the environment injected by your orchestrator. The container 
   endpoint or a credential. Anything that would send connection details to the client is wrong,
   including "helpful" error messages: `main.rs` deliberately reports config failures to the log,
   not the response body.
+- **Nothing proportional to node count may run per frame.** Per-node constants are stamped once
+  at load; interaction state is a typed-array rewrite, not a per-node callback. If you find
+  yourself adding an accessor deck.gl will call for all 25 000 nodes on every frame, stop.
+- **The layout is two-stage, and both stages matter.** The server does the structural work
+  (Barnes–Hut, native, multicore, deterministic — the seed is fixed on purpose, because a layout
+  that changes between refreshes destroys the user's spatial memory). The client then runs a
+  *warm-started* `d3-force-3d` pass to resolve the overlaps the approximation leaves. Do not
+  make the client cold-start: that is what used to cost ~8 fps for fifteen seconds. Force scale
+  must come from the **server** layout (`Buffers.edgeScale`), never the live one, or repeated
+  restarts compound the expansion.
+- **The semantic search tier must stay optional.** With `SEARCH_EMBED_URL` unset, no request is
+  made and search falls back to fuzzy matching. A hard dependency on an embedding service would
+  make the published image useless to anyone who does not run one.
 - **`/api/graph` is unauthenticated and returns everything the fetch options admit.** There is
   no authorization layer here by design — put an authenticating proxy in front of it on any
   network where the graph contents are not public, and use `GRAPH_SKIP_PROPS` for sensitive
