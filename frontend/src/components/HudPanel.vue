@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useGraph } from '../composables/useGraph'
 import { useSearch } from '../composables/useSearch'
+import LayoutSettings from './LayoutSettings.vue'
 import TypeLegend from './TypeLegend.vue'
 
 const { stats, loading, error, load } = useGraph()
@@ -83,6 +84,7 @@ const refresh = () => load({ refresh: true })
     </div>
 
     <TypeLegend />
+    <LayoutSettings />
   </div>
 </template>
 

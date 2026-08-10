@@ -40,7 +40,9 @@ declare module 'd3-force-3d' {
   }
 
   export interface LinkForce<N, L> extends Force<N> {
-    id(fn: (node: N) => string): this
+    /** d3 keys its link map by whatever this returns — a number is as valid as a string, and the
+     *  worker uses the array index precisely to keep strings off the thread boundary. */
+    id(fn: (node: N) => string | number): this
     distance(d: number): this
     strength(s: number): this
     links(links: L[]): this

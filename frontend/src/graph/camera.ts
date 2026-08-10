@@ -98,6 +98,54 @@ export function centreView(view: ViewState, x: number, y: number, z = 0): ViewSt
   return { ...view, target: [x, y, z] }
 }
 
+/**
+ * Interpolate between two camera states.
+ *
+ * **Zoom is interpolated in its own logarithmic units**, which is what makes the motion read as
+ * even. `zoom` is already a log2 scale, so a straight lerp of it is a constant *multiplicative*
+ * change per frame — the eye reads that as steady. Interpolating the linear scale (`2 ** zoom`)
+ * instead lurches: it crawls at the wide end and stampedes at the close end.
+ *
+ * `rotationOrbit` is taken the short way round, so a turn from 350° to 10° is 20° of motion and
+ * not 340° of spin.
+ */
+export function lerpView(from: ViewState, to: ViewState, t: number): ViewState {
+  const mix = (a: number, b: number) => a + (b - a) * t
+  let orbitDelta = ((to.rotationOrbit - from.rotationOrbit) % 360 + 540) % 360 - 180
+  if (Object.is(orbitDelta, -180)) orbitDelta = 180
+  return {
+    ...to,
+    target: [
+      mix(from.target[0], to.target[0]),
+      mix(from.target[1], to.target[1]),
+      mix(from.target[2], to.target[2]),
+    ],
+    zoom: mix(from.zoom, to.zoom),
+    rotationX: mix(from.rotationX, to.rotationX),
+    rotationOrbit: from.rotationOrbit + orbitDelta * t,
+  }
+}
+
+/**
+ * Easing for camera moves: slow at both ends, quickest in the middle.
+ *
+ * A linear camera move is what made the old refit read as a snap even once it had a duration —
+ * motion that starts and stops at full speed looks mechanical however long it lasts.
+ */
+export function easeInOutCubic(t: number): number {
+  return t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2
+}
+
+/** Whether two camera states are close enough that animating between them is pointless. */
+export function viewsClose(a: ViewState, b: ViewState): boolean {
+  return (
+    Math.abs(a.zoom - b.zoom) < 1e-3 &&
+    Math.abs(a.target[0] - b.target[0]) < 1e-3 &&
+    Math.abs(a.target[1] - b.target[1]) < 1e-3 &&
+    Math.abs(a.target[2] - b.target[2]) < 1e-3
+  )
+}
+
 /** The world-space half-extent of the viewport at the current zoom. */
 export function worldHalfExtent(
   view: ViewState,

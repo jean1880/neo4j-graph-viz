@@ -13,9 +13,28 @@ const { load, clearSelection, hoveredNode } = useGraph()
 const tipX = ref(0)
 const tipY = ref(0)
 
+/**
+ * Tooltip position, coalesced to one update per frame.
+ *
+ * A pointer emits moves faster than the display refreshes — on a 1000 Hz mouse, several times
+ * faster. Writing the refs per event queued a Vue update and an inline-style write for positions
+ * that were overwritten before anything was painted. The handler now only records the newest
+ * coordinates; the frame publishes them.
+ */
+let pointerX = 0
+let pointerY = 0
+let tipFrame = 0
+
+function publishTip() {
+  tipFrame = 0
+  tipX.value = pointerX + 14
+  tipY.value = pointerY + 14
+}
+
 function onMouseMove(e: MouseEvent) {
-  tipX.value = e.clientX + 14
-  tipY.value = e.clientY + 14
+  pointerX = e.clientX
+  pointerY = e.clientY
+  if (!tipFrame) tipFrame = requestAnimationFrame(publishTip)
 }
 
 function onKeydown(e: KeyboardEvent) {
@@ -28,6 +47,7 @@ onMounted(() => {
   window.addEventListener('keydown', onKeydown)
 })
 onBeforeUnmount(() => {
+  if (tipFrame) cancelAnimationFrame(tipFrame)
   window.removeEventListener('mousemove', onMouseMove)
   window.removeEventListener('keydown', onKeydown)
 })

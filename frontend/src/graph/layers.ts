@@ -49,6 +49,10 @@ export interface LayerParams {
   ring: Ring[]
   /** 3 renders spheres through a mesh layer; 2 renders flat discs. */
   dimensions: 2 | 3
+  /** Edge stroke width in pixels, from the display sliders. */
+  linkThickness: number
+  /** The node-size slider. Scales the 2D pixel floor as well as the world radius — see below. */
+  nodeSize: number
   onHover: (info: PickingInfo) => void
   onClick: (info: PickingInfo) => void
 }
@@ -77,9 +81,10 @@ export function buildLayers(p: LayerParams): Layer[] {
       },
       widthUnits: 'pixels',
       // Width is the other half of legibility: a thicker stroke reads at a lower opacity than a
-      // hairline does, which is what lets the density scaling stay conservative. 3D gets more
-      // again, because an angled edge covers fewer pixels than the same edge face-on.
-      getWidth: p.dimensions === 3 ? 1.8 : 1.3,
+      // hairline does, which is what lets the density scaling stay conservative. The 3D default
+      // is higher, because an angled edge covers fewer pixels than the same edge face-on — see
+      // `DEFAULT_SETTINGS`, which is where both defaults now live.
+      getWidth: p.linkThickness,
       pickable: false,
     }),
     p.dimensions === 3
@@ -116,7 +121,12 @@ export function buildLayers(p: LayerParams): Layer[] {
           radiusUnits: 'common',
           // A big layout viewed whole makes world-unit radii sub-pixel; without a floor the
           // nodes vanish and only the edges render.
-          radiusMinPixels: 2,
+          //
+          // The floor **scales with the size slider**, and has to. Zoomed out on a large graph
+          // every node is already clamped here, so a slider that only changed the world radius
+          // moved a number the floor then overrode — the control looked broken precisely when
+          // the whole graph was on screen, which is when you reach for it.
+          radiusMinPixels: 2 * p.nodeSize,
           pickable: true,
           onHover: p.onHover,
           onClick: p.onClick,

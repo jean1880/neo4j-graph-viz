@@ -197,7 +197,9 @@ export function useGraph() {
         nodes: nodes.length,
         links: parsed.links.length,
       }
-      console.info('[graph] load', perf.value)
+      // Spread, not the ref's value: a Vue reactive object logs as `Proxy(Object)` and has to be
+      // expanded by hand, which defeats the point of a one-line timing report.
+      console.info('[graph] load', { ...perf.value })
       reconcileFocus()
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e)

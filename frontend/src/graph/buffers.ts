@@ -45,11 +45,21 @@ export interface Buffers {
   /** `id` → buffer index, so camera moves and labels can read live positions. */
   idIndex: Map<string, number>
   /**
-   * Median edge length of the **server's** layout.
+   * Median edge length of the **server's** layout, measured once when the positions arrive and
+   * never rewritten by a client settle.
    *
-   * The simulation scales its forces to this. Measuring it from the live layout instead would
-   * compound: each restart would read an already-expanded graph, scale the forces up to match,
-   * and expand it further — toggling modes a few times would inflate the graph without bound.
+   * **This is the one the simulation scales its forces to.** Measuring it from the live layout
+   * instead compounds: each restart reads an already-expanded graph, scales the forces up to
+   * match, and expands it further. That is not hypothetical — the two were one field, and every
+   * slider nudge or mode toggle inflated the graph a little more.
+   */
+  baseEdgeScale: number
+  /**
+   * Median edge length of the layout **as it currently stands**, re-measured as it settles.
+   *
+   * Only node *size* may read this, and only in 3D, where a radius is a ratio to edge length: the
+   * client settle expands that length several times over, and a radius fixed before it does ends
+   * up as dust. It must never reach the forces — see above.
    */
   edgeScale: number
 }
@@ -75,6 +85,8 @@ const DIM_ALPHA = 38
  *
  * These are the two knobs for node size, and they are independent. Raise to make nodes bigger
  * relative to the space between them, lower to make them smaller. Nothing else needs to change.
+ * The `nodeSize` slider multiplies whichever one is in play, so these stay the *shipped* values
+ * and the user's setting reads as "× the default".
  */
 const NODE_SCALE_2D = 2.0
 const NODE_RADIUS_FRACTION_3D = 0.115
@@ -132,6 +144,7 @@ export function buildBuffers(
   links: GraphLink[],
   linkEnd: LinkEnd,
   dimensions: 2 | 3,
+  nodeSize = 1,
 ): Buffers {
   const n = nodes.length
   const m = links.length
@@ -164,6 +177,7 @@ export function buildBuffers(
   const buf: Buffers = {
     n,
     m,
+    baseEdgeScale: 30,
     edgeScale: 30,
     basePositions: positions,
     positions: Float32Array.from(positions),
@@ -181,7 +195,9 @@ export function buildBuffers(
     idIndex,
   }
   syncFromNodes(buf, nodes)
-  rescaleNodes(buf, nodes, links, linkEnd, dimensions)
+  rescaleNodes(buf, nodes, links, linkEnd, dimensions, nodeSize)
+  // Taken here, from the freshly-arrived server layout, and left alone from now on.
+  buf.baseEdgeScale = buf.edgeScale
   return buf
 }
 
@@ -203,6 +219,8 @@ export function rescaleNodes(
   links: GraphLink[],
   linkEnd: LinkEnd,
   dimensions: 2 | 3,
+  /** The `nodeSize` slider: a multiplier on whichever radius rule the mode uses. */
+  nodeSize = 1,
 ): void {
   buf.edgeScale = medianEdgeLength(nodes, links, buf.idIndex, linkEnd)
 
@@ -213,7 +231,7 @@ export function rescaleNodes(
     // The degree weight, scaled — the 2D layout's own scale already suits it.
     buf.meshSizeScale = 1
     for (let i = 0; i < buf.n; i++) {
-      nodes[i].rw = nodes[i].r * NODE_SCALE_2D
+      nodes[i].rw = nodes[i].r * NODE_SCALE_2D * nodeSize
       buf.baseRadius[i] = nodes[i].rw
       buf.baseRelScale[i] = nodes[i].rw
     }
@@ -223,7 +241,7 @@ export function rescaleNodes(
   // 3D: a typical node is `NODE_RADIUS_FRACTION_3D` of an edge length. The magnitude goes in
   // `meshSizeScale`; `baseRelScale` carries only how much bigger or smaller this node is than
   // typical, so their product is the true world radius in `rw`.
-  buf.meshSizeScale = buf.edgeScale * NODE_RADIUS_FRACTION_3D
+  buf.meshSizeScale = buf.edgeScale * NODE_RADIUS_FRACTION_3D * nodeSize
   for (let i = 0; i < buf.n; i++) {
     buf.baseRelScale[i] = nodes[i].r / medianWeight
     nodes[i].rw = buf.meshSizeScale * buf.baseRelScale[i]
@@ -305,6 +323,8 @@ export function syncFromNodes(buf: Buffers, nodes: GraphNode[]): void {
 export function applyPositions(
   buf: Buffers,
   nodes: GraphNode[],
+  links: GraphLink[],
+  linkEnd: LinkEnd,
   result: SearchResponse | null,
 ): void {
   if (!result) {
@@ -327,6 +347,10 @@ export function applyPositions(
     }
   }
   syncFromNodes(buf, nodes)
+  // These positions came from the server too — a search re-lays-out the surviving subgraph, and
+  // a subgraph's natural edge length is not the whole graph's. Re-anchor the force scale to it,
+  // or the forces would hold a 200-node result at the spacing of a 25 000-node hairball.
+  buf.baseEdgeScale = medianEdgeLength(nodes, links, buf.idIndex, linkEnd)
 }
 
 /**

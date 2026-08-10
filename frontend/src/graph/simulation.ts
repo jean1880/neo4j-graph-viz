@@ -1,45 +1,32 @@
-import {
-  forceCollide,
-  forceLink,
-  forceManyBody,
-  forceSimulation,
-  forceX,
-  forceY,
-  forceZ,
-  type Simulation,
-} from 'd3-force-3d'
 import type { GraphLink, GraphNode } from '../types'
+import { DEFAULT_SETTINGS, type LayoutSettings } from './settings'
 
 /**
- * A full force simulation, warm-started from the server's layout.
+ * The client-side polish pass over the server's layout — **driven from a Web Worker.**
  *
- * The server gets the *structure* right — it can afford a Barnes–Hut pass across every core that
+ * The server gets the *structure* right: it can afford a Barnes–Hut pass across every core that
  * the browser never could. But at θ=0.9 it is an approximation, and nodes end up overlapping.
- * This finishes the job with real charge, link, and collision forces, run against an already-good
- * configuration so it converges in ~100 ticks rather than the ~15 seconds a cold start took.
+ * This finishes the job with real charge, link, and collision forces, warm-started from an
+ * already-good configuration so it converges in ~100 ticks rather than the ~15 seconds a cold
+ * start took.
  *
- * What makes this affordable is the renderer, not the physics. The old simulation ran at ~8 fps,
- * and almost all of that was the 449 ms canvas2d repaint on every tick — not d3. With painting
- * down to about a millisecond, the tick itself is what is left.
+ * ## Why it is off-thread
+ *
+ * Measured at 60 000 nodes: **423 ms per tick**, ~100 ticks, all of it blocking. The page ran at
+ * 2.4 fps and answered no input for 30 seconds (`docs/perf-60k.md`). Rendering was never the
+ * constraint — a hover storm at the same node count did not move frame time at all. So the tick
+ * moved to a worker, and the main thread's share of a settle became: copy a `Float32Array`, draw.
+ *
+ * The transport is deliberately primitive — positions and index pairs, no ids, no objects. The
+ * worker posts each tick's positions as a **transferred** buffer, so a 60k update is a pointer
+ * hand-off rather than a structured clone.
+ *
+ * ## What the caller still owns
+ *
+ * `GraphNode.x/y/z` remains the authority the rest of the app reads (bounds, labels, node sizing),
+ * so every message writes back into those objects. That write is O(n) and measured in a
+ * millisecond at 60k — the part that was expensive is the part that left.
  */
-
-/** Warm-start alpha. Low on purpose: this is a polish pass, and a high alpha would throw away
- *  the structure the server spent 750 ms computing. */
-const ALPHA = 0.35
-const ALPHA_DECAY = 0.045
-const ALPHA_MIN = 0.006
-/** Fraction of the server's edge length the client settles toward. Below 1 the graph contracts,
- *  which — together with `NODE_RADIUS_FRACTION_OF_EDGE` — is what stops it reading as dust. */
-/**
- * Layout tuning, per mode. 2D is left exactly as it was — its layout was already well judged, and
- * the containment 3D needs makes 2D balloon. 3D alone gets the weaker charge, the shorter
- * repulsion range and the centring pull, because a volume layout otherwise spreads until its
- * nodes are specks against the span the camera has to fit.
- */
-const TUNING = {
-  2: { chargeDivisor: 30, distanceMaxFactor: 12, linkDistance: 1, linkStrength: 0.35, gravity: 0 },
-  3: { chargeDivisor: 55, distanceMaxFactor: 8, linkDistance: 0.85, linkStrength: 0.45, gravity: 0.02 },
-} as const
 
 export interface SimulationCallbacks {
   onTick: () => void
@@ -55,19 +42,54 @@ export interface SimulationHandle {
     dimensions: 2 | 3,
     /** Length scale to hold the forces in equilibrium with — the server layout's median edge. */
     dist: number,
+    /** The user's force sliders for this mode. */
+    settings?: LayoutSettings,
   ) => void
   stop: () => void
+  /** Release the worker. After this the handle is dead. */
+  dispose: () => void
   readonly running: boolean
 }
 
-export function createSimulation(cb: SimulationCallbacks): SimulationHandle {
-  let sim: Simulation<GraphNode> | null = null
+type WorkerMessage = { type: 'tick' | 'end'; positions: Float32Array }
+
+/** Resolve a link end to a node id — links may carry either the id or the node itself. */
+type LinkEnd = (end: string | GraphNode) => string
+
+export function createSimulation(
+  cb: SimulationCallbacks,
+  linkEnd: LinkEnd,
+): SimulationHandle {
+  const worker = new Worker(new URL('./layout.worker.ts', import.meta.url), { type: 'module' })
   let running = false
+  /** The node array the in-flight run belongs to. A late message from a superseded run would
+   *  otherwise write positions into whatever graph is loaded now. */
+  let active: GraphNode[] | null = null
+
+  worker.onmessage = (e: MessageEvent<WorkerMessage>) => {
+    const { type, positions } = e.data
+    const nodes = active
+    if (!nodes) return
+    const n = Math.min(nodes.length, positions.length / 3)
+    for (let i = 0; i < n; i++) {
+      nodes[i].x = positions[i * 3]
+      nodes[i].y = positions[i * 3 + 1]
+      nodes[i].z = positions[i * 3 + 2]
+    }
+    if (type === 'end') {
+      running = false
+      active = null
+      cb.onEnd()
+    } else {
+      cb.onTick()
+    }
+  }
 
   function stop() {
-    sim?.stop()
-    sim = null
+    if (!running) return
+    worker.postMessage({ type: 'stop' })
     running = false
+    active = null
   }
 
   function start(
@@ -75,95 +97,82 @@ export function createSimulation(cb: SimulationCallbacks): SimulationHandle {
     links: GraphLink[],
     dimensions: 2 | 3 = 2,
     dist = 30,
+    settings: LayoutSettings = DEFAULT_SETTINGS[dimensions],
   ) {
     stop()
     if (nodes.length < 2) return
 
-    // d3's own defaults sit at distance 30 / strength −30, so preserve that ratio at our scale;
-    // charge goes as the square of length for the equilibrium spacing to hold.
-    const tuning = TUNING[dimensions]
-    // Snapshot the collision radii before the first tick; see the note on the collide force.
-    const collideRadii = nodes.map((node) => node.rw * 1.1)
-    const charge = -(dist * dist) / tuning.chargeDivisor
-
-    // Entering 3D from a flat layout gives the z-axis nothing to work with — every node sits on
-    // the same plane, so the forces have no asymmetry to amplify and the graph stays a pancake.
-    // A small seed of depth is what lets it actually inflate.
-    if (dimensions === 3) {
-      for (const n of nodes) {
-        if (!n.z) n.z = (Math.random() - 0.5) * dist
-      }
-    } else {
-      for (const n of nodes) n.z = 0
+    const index = new Map<string, number>()
+    const positions = new Float32Array(nodes.length * 3)
+    const radii = new Float32Array(nodes.length)
+    for (let i = 0; i < nodes.length; i++) {
+      const node = nodes[i]
+      index.set(node.id, i)
+      positions[i * 3] = node.x
+      positions[i * 3 + 1] = node.y
+      positions[i * 3 + 2] = dimensions === 3 ? (node.z ?? 0) : 0
+      // Snapshotted here rather than read live in the worker: see the note on the collide force.
+      radii[i] = node.rw * 1.1
     }
 
-    // Dimensions must be passed at construction, NOT via `.numDimensions()` afterwards:
-    // `forceSimulation` initialises each node's velocity components immediately, so a
-    // 2D-initialised node has no `vz` and its `z` becomes NaN on the first tick — which
-    // silently poisons the bounds and blanks the canvas.
-    sim = forceSimulation<GraphNode>(nodes, dimensions)
-      .force(
-        'charge',
-        forceManyBody<GraphNode>()
-          .strength(charge)
-          .theta(0.9)
-          // Long-range repulsion barely changes a warm-started layout but dominates the cost;
-          // capping it is most of what makes a full simulation affordable at this size.
-          .distanceMax(dist * tuning.distanceMaxFactor),
-      )
-      .force(
-        'link',
-        forceLink<GraphNode, GraphLink>(links)
-          .id((d) => d.id)
-          .distance(dist * tuning.linkDistance)
-          .strength(tuning.linkStrength),
-      )
-      // The collision pass is what actually separates overlapping nodes — the thing the
-      // server's approximation leaves behind.
-      //
-      // Radii are **frozen at start**, not read live from `rw`. Visual size is derived from the
-      // layout's edge length, so a live read would close a feedback loop: bigger radius pushes
-      // nodes apart, which lengthens edges, which enlarges the radius again. With the 3D radius
-      // exceeding the link distance that loop has gain above 1, and the layout inflates without
-      // bound — which is exactly what it was doing.
-      .force(
-        'collide',
-        forceCollide<GraphNode>()
-          .radius((d) => collideRadii[d.index ?? 0] ?? 1)
-          .iterations(1),
-      )
-      // Mild pull toward the origin, 3D only (2D's gravity is 0, leaving it untouched). Without
-      // it nothing bounds a volume layout's extent — components with no edges between them
-      // simply drift apart forever.
-      .force('x', tuning.gravity ? forceX<GraphNode>(0).strength(tuning.gravity) : null)
-      .force('y', tuning.gravity ? forceY<GraphNode>(0).strength(tuning.gravity) : null)
-      .force('z', dimensions === 3 ? forceZ<GraphNode>(0).strength(tuning.gravity) : null)
-      .alpha(ALPHA)
-      .alphaDecay(ALPHA_DECAY)
-      .alphaMin(ALPHA_MIN)
+    // Index pairs, so no string crosses the boundary and the worker needs no id map.
+    const pairs = new Int32Array(links.length * 2)
+    let m = 0
+    for (const l of links) {
+      const s = index.get(linkEnd(l.source))
+      const t = index.get(linkEnd(l.target))
+      if (s === undefined || t === undefined) continue
+      pairs[m * 2] = s
+      pairs[m * 2 + 1] = t
+      m++
+    }
+    const links2 = pairs.subarray(0, m * 2)
 
+    active = nodes
     running = true
 
-    // Reduced motion: converge without animating it. The ticks still run — all at once — so the
-    // user is handed a settled graph instead of watching it move.
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      sim.stop()
-      sim.tick(Math.ceil(Math.log(ALPHA_MIN / ALPHA) / Math.log(1 - ALPHA_DECAY)))
-      cb.onTick()
-      stop()
-      cb.onEnd()
-      return
+    // Copied field by field, **not** passed through. `settings` arrives as a Vue reactive Proxy,
+    // and `postMessage` cannot structure-clone a Proxy: it throws `DataCloneError`, the message
+    // is never delivered, and the settle silently does not happen. The page looks fine — it is
+    // simply showing the server's layout forever — which is exactly the kind of failure a
+    // frame-time measurement reports as a triumph.
+    const plain: LayoutSettings = {
+      nodeSize: settings.nodeSize,
+      linkThickness: settings.linkThickness,
+      linkDistance: settings.linkDistance,
+      repel: settings.repel,
+      linkForce: settings.linkForce,
+      centreForce: settings.centreForce,
     }
 
-    sim.on('tick', cb.onTick).on('end', () => {
-      running = false
-      cb.onEnd()
-    })
+    // Reduced motion: converge without animating it. The ticks still run — all at once, in the
+    // worker — so the user is handed a settled graph instead of watching it move.
+    const immediate = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+    worker.postMessage(
+      {
+        type: 'start',
+        positions,
+        radii,
+        links: links2,
+        dimensions,
+        dist,
+        settings: plain,
+        immediate,
+      },
+      // `links2` may be a view onto `pairs`; transfer the backing buffer once.
+      [positions.buffer, radii.buffer, pairs.buffer],
+    )
   }
 
   return {
     start,
     stop,
+    dispose: () => {
+      running = false
+      active = null
+      worker.terminate()
+    },
     get running() {
       return running
     },
