@@ -2,11 +2,13 @@
 import { computed, ref } from 'vue'
 import { useGraph } from '../composables/useGraph'
 import { colorFor } from '../color'
+import { MOD_LABEL } from '../platform'
 
 const { counts, hidden, isHidden, toggleLabel, soloLabel, showAllLabels } = useGraph()
 
 // Plain click toggles one type; ctrl/⌘-click isolates it (and isolating it again restores all).
-// ⌘ is included because ctrl-click is a right-click on macOS.
+// Both modifiers are accepted; `MOD_LABEL` decides only which one we *tell* the user to press,
+// since ctrl-click is a right-click on macOS.
 const onLegendClick = (e: MouseEvent, label: string) => {
   if (e.ctrlKey || e.metaKey) soloLabel(label)
   else toggleLabel(label)
@@ -42,7 +44,7 @@ const onToggle = (e: Event) => {
         class="lg"
         :class="{ off: isHidden(label) }"
         :aria-pressed="!isHidden(label)"
-        title="Click to show/hide · Ctrl-click to isolate this type"
+        :title="`Click to show/hide · ${MOD_LABEL}-click to isolate this type`"
         @click="onLegendClick($event, label)"
       >
         <span class="dot" :style="{ background: colorFor(label) }"></span>
@@ -51,7 +53,7 @@ const onToggle = (e: Event) => {
       </button>
     </div>
     <p class="tip">
-      ctrl-click to isolate<template v-if="hiddenCount">
+      {{ MOD_LABEL }}-click to isolate<template v-if="hiddenCount">
         ·
         <button type="button" class="reset" @click="showAllLabels()">show all</button>
       </template>
