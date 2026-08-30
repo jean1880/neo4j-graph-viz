@@ -1,6 +1,6 @@
 [package]
 name = "neo4j-graph-viz"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 description = "Rust/axum backend for a force-directed Neo4j graph viewer."
 license = "MIT"
