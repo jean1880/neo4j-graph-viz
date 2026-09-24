@@ -1,20 +1,10 @@
-/* App-global layout. Colour/typography come from @nuvek/ui tokens (imported before this). */
-html,
-body,
-#app {
-  margin: 0;
-  height: 100%;
-}
-
-body {
-  background: var(--bg);
-  color: var(--text);
-  font-family: var(--font-sans);
-  overflow: hidden;
-}
+/* Tailwind + the shared nuvek theme. Components style themselves with utilities; this file only
+   holds what is genuinely global to the viewer. */
+@import "tailwindcss";
+@import "@nuvek/ui/theme.css";
 
 /* ---- Type scale -----------------------------------------------------------------------------
-   A single multiplier over @nuvek/ui's type tokens.
+   A single multiplier over the shared type scale.
 
    The library's scale is sound; it is just set a step small for a dense, dark, data-heavy view
    read at arm's length. Scaling every step by the same factor raises everything without
@@ -22,8 +12,9 @@ body {
    what a per-token nudge (+1px each) would have quietly destroyed.
 
    Deliberately overridden HERE rather than in @nuvek/ui: that library is shared, and this is a
-   preference of this viewer, not a defect in the design system. `--text-scale` is the one knob. */
-:root {
+   preference of this viewer, not a defect in the design system. `--text-scale` is the one knob.
+   Line heights are unitless ratios in the theme, so they follow the new sizes unchanged. */
+@theme {
   --text-scale: 1.1;
   --text-xs: calc(0.75rem * var(--text-scale));
   --text-sm: calc(0.875rem * var(--text-scale));
@@ -31,15 +22,31 @@ body {
   --text-lg: calc(1.125rem * var(--text-scale));
   --text-xl: calc(1.25rem * var(--text-scale));
   --text-2xl: calc(1.5rem * var(--text-scale));
+
+  /* Loading skeleton in the node detail panel. */
+  --animate-skeleton: skeleton 1.2s ease-in-out infinite;
+  @keyframes skeleton {
+    50% { opacity: 0.45; }
+  }
 }
 
-/* Lets `block-size: auto` be transitioned — used by the HUD's collapsible type legend. */
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  overflow: hidden;
+}
+
+/* Lets `block-size: auto` be transitioned — used by the HUD's collapsible sections. */
 :root {
   interpolate-size: allow-keywords;
 }
 
 /* ---- Scrollbars ----------------------------------------------------------------------------
-   Themed off the @nuvek/ui tokens so the panels' scrollbars stop looking like OS chrome bolted
+   Themed off the shared tokens so the panels' scrollbars stop looking like OS chrome bolted
    onto glass. `scrollbar-width`/`scrollbar-color` is the actual CSS spec and — crucially — is
    inherited, so declaring it once here themes every scroll container in the app.
 
@@ -48,19 +55,12 @@ body {
    so mixing the two silently yields whichever the browser prefers. They live behind
    `@supports not` instead, serving only the engines that lack the standard properties. */
 :root {
-  --scrollbar-thumb: color-mix(in srgb, var(--text) 20%, transparent);
-  --scrollbar-thumb-active: color-mix(in srgb, var(--text) 40%, transparent);
+  --scrollbar-thumb: color-mix(in srgb, var(--color-fg) 20%, transparent);
+  --scrollbar-thumb-active: color-mix(in srgb, var(--color-fg) 40%, transparent);
   --scrollbar-track: transparent;
 
   scrollbar-width: thin;
   scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
-}
-
-/* Recede until the pointer or keyboard is actually in the panel. Inherited, so this covers the
-   nested legend list as well as the panel itself. */
-.nv-graph-panel:hover,
-.nv-graph-panel:focus-within {
-  scrollbar-color: var(--scrollbar-thumb-active) var(--scrollbar-track);
 }
 
 @supports not (scrollbar-color: auto) {
@@ -74,7 +74,7 @@ body {
   }
   ::-webkit-scrollbar-thumb {
     background: var(--scrollbar-thumb);
-    border-radius: var(--radius-full);
+    border-radius: 9999px;
     /* Transparent border + padding-box clip insets the thumb visually while leaving the full
        10px as grab target. */
     border: 3px solid transparent;
@@ -93,14 +93,19 @@ body {
   }
 }
 
-/* Floating glass panel shared by the HUD and detail overlays. */
-.nv-graph-panel {
+/* Floating glass panel shared by the HUD, the view toggle and the detail overlay. Its scrollbar
+   recedes until the pointer or keyboard is actually in the panel (inherited, so it covers the
+   nested legend list too). Padding and stacking are left to each use site (`px-4 py-3 z-10`),
+   so they are overridden by ordinary utilities rather than by cascade order. */
+@utility graph-panel {
   position: fixed;
-  z-index: 10;
-  background: var(--glass-bg);
-  border: 1px solid var(--border-alt);
+  background: var(--color-glass);
+  border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-lg);
-  padding: var(--space-3) var(--space-4);
   backdrop-filter: blur(8px);
   box-shadow: var(--shadow-xl);
+  &:hover,
+  &:focus-within {
+    scrollbar-color: var(--scrollbar-thumb-active) var(--scrollbar-track);
+  }
 }

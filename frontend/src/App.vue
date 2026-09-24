@@ -59,41 +59,16 @@ onBeforeUnmount(() => {
   <ViewModeToggle />
   <NodeDetail />
 
-  <div v-if="hoveredNode" class="tip" :style="{ left: `${tipX}px`, top: `${tipY}px` }">
+  <div
+    v-if="hoveredNode"
+    class="pointer-events-none fixed z-20 max-w-65 rounded-sm border border-border-strong bg-bg-code px-2.25 py-1.25 text-sm text-fg"
+    :style="{ left: `${tipX}px`, top: `${tipY}px` }"
+  >
     <b>{{ hoveredNode.name }}</b
-    ><br /><span>{{ hoveredNode.label }} · deg {{ hoveredNode.deg }}</span>
+    ><br /><span class="text-fg-muted">{{ hoveredNode.label }} · deg {{ hoveredNode.deg }}</span>
   </div>
 
-  <div class="hint">
+  <div class="fixed right-4 bottom-3 z-10 text-sm text-fg-dim">
     scroll = zoom · drag = pan · click = pin · right-click = fit · esc = clear
   </div>
 </template>
-
-<style scoped>
-.tip {
-  position: fixed;
-  z-index: 20;
-  pointer-events: none;
-  padding: 5px 9px;
-  background: var(--bg-code);
-  border: 1px solid var(--border-alt);
-  border-radius: var(--radius-sm);
-  font-size: var(--text-sm);
-  max-width: 260px;
-  color: var(--text);
-}
-.tip b {
-  color: var(--text);
-}
-.tip span {
-  color: var(--text-muted);
-}
-.hint {
-  position: fixed;
-  bottom: 12px;
-  right: var(--space-4);
-  color: var(--text-dim);
-  font-size: var(--text-sm);
-  z-index: 10;
-}
-</style>

@@ -76,49 +76,69 @@ const moreCount = computed(() => Math.max(0, neighbours.value.length - 60))
 function goto(node: GraphNode | undefined) {
   if (node) select(node, { reveal: true })
 }
+
+const section = 'mt-3.25 mb-1.5 text-xs tracking-wider text-fg-dim uppercase'
+const skeletonRow = 'h-2.75 rounded-xs bg-fg/8 motion-safe:animate-skeleton'
 </script>
 
 <template>
-  <div v-if="selectedNode" class="nv-graph-panel detail">
-    <div class="dhead">
-      <span class="dot" :style="{ background: colorFor(selectedNode.label) }"></span>
-      <h3>{{ selectedNode.name }}</h3>
-      <button type="button" class="close" aria-label="Close node details" @click="clearSelection">
+  <!-- Node-to-node the content length swings a lot; a reserved gutter keeps the text from
+       reflowing sideways as the scrollbar comes and goes. 334px is the border-box width:
+       300px of content. -->
+  <div
+    v-if="selectedNode"
+    class="graph-panel right-4 bottom-4 z-10 max-h-[62vh] w-[334px] overflow-y-auto px-4 py-3 [scrollbar-gutter:stable]"
+  >
+    <div class="mb-1 flex items-start gap-2">
+      <span
+        class="mt-0.75 size-2.75 flex-none rounded-full"
+        :style="{ background: colorFor(selectedNode.label) }"
+      ></span>
+      <h3 class="flex-1 text-base font-[650] wrap-break-word">{{ selectedNode.name }}</h3>
+      <!-- WCAG 2.5.8 asks for 24x24 CSS px on pointer targets; a bare glyph is well under it. -->
+      <button
+        type="button"
+        class="inline-flex min-h-7 min-w-7 flex-none cursor-pointer items-center justify-center rounded-sm text-xl leading-none text-fg-muted hover:bg-fg/8 hover:text-fg"
+        aria-label="Close node details"
+        @click="clearSelection"
+      >
         ×
       </button>
     </div>
     <!-- `group` is empty unless GRAPH_WRAPPER_LABELS matched a wrapper label — omit it then. -->
-    <div class="meta">
+    <div class="mb-1.5 text-sm text-fg-muted">
       {{ selectedNode.label }} ·<template v-if="selectedNode.group">
         {{ selectedNode.group }} ·</template>
       {{ selectedNode.deg }} connection{{ selectedNode.deg === 1 ? '' : 's' }}
     </div>
 
-    <div class="sec">Properties</div>
+    <div :class="section">Properties</div>
     <!-- Fetched per node, so this section has loading and error states the rest of the panel
          does not. Skeleton rows rather than a spinner keep the panel height from jumping. -->
-    <div v-if="detailLoading" class="skel" aria-busy="true" aria-label="Loading properties">
-      <span v-for="i in 3" :key="i" class="skel-row"></span>
+    <div v-if="detailLoading" class="flex flex-col gap-1.5" aria-busy="true" aria-label="Loading properties">
+      <span :class="skeletonRow"></span>
+      <span :class="[skeletonRow, 'w-4/5']"></span>
+      <span :class="[skeletonRow, 'w-[55%]']"></span>
     </div>
-    <div v-else-if="detailError" class="muted err">
+    <div v-else-if="detailError" class="text-sm text-fg-dim">
       could not load properties — {{ detailError }}
     </div>
-    <table v-else>
-      <tbody>
+    <table v-else class="w-full">
+      <tbody class="[&_td]:py-0.75 [&_td]:align-top [&_td]:text-sm">
         <tr v-if="propRows.length === 0">
-          <td class="v muted">no properties</td>
+          <td class="text-fg-dim">no properties</td>
         </tr>
         <tr v-for="[k, v] in propRows" :key="k">
-          <td class="k">{{ k }}</td>
-          <td class="v">{{ v }}</td>
+          <td class="w-[1%] pe-2.5 whitespace-nowrap text-fg-muted">{{ k }}</td>
+          <td class="wrap-break-word text-fg">{{ v }}</td>
         </tr>
       </tbody>
     </table>
 
-    <div class="sec">Connections</div>
-    <div v-if="relSummary.length" class="rels">
+    <div :class="section">Connections</div>
+    <div v-if="relSummary.length" class="mb-2 text-sm">
       <template v-for="([t, c], i) in relSummary" :key="t"
-        ><span v-if="i > 0"> · </span>{{ t }} <span class="muted">{{ c }}</span></template
+        ><span v-if="i > 0"> · </span>{{ t }} <span class="text-fg-dim">{{ c }}</span></template
       >
     </div>
     <div>
@@ -126,155 +146,13 @@ function goto(node: GraphNode | undefined) {
         v-for="(nb, i) in chips"
         :key="i"
         type="button"
-        class="nb"
+        class="my-0.5 me-1 inline-block min-h-6 cursor-pointer rounded-full border border-border-strong bg-surface px-2.5 py-1 text-sm leading-[1.4] text-fg-muted hover:border-primary hover:text-fg"
         :title="`${nb.dir} ${nb.type}`"
         @click="goto(nb.node)"
       >
         {{ nb.node?.name ?? '?' }}
       </button>
-      <div v-if="moreCount" class="muted more">+{{ moreCount }} more…</div>
+      <div v-if="moreCount" class="mt-1.5 text-fg-dim">+{{ moreCount }} more…</div>
     </div>
   </div>
 </template>
-
-<style scoped>
-.detail {
-  bottom: var(--space-4);
-  right: var(--space-4);
-  width: 300px;
-  max-height: 62vh;
-  overflow-y: auto;
-  /* Node-to-node the content length swings a lot; a reserved gutter keeps the text from
-     reflowing sideways as the scrollbar comes and goes. */
-  scrollbar-gutter: stable;
-}
-.dhead {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-2);
-  margin-bottom: 4px;
-}
-.dot {
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  flex: 0 0 auto;
-  margin-top: 3px;
-}
-h3 {
-  margin: 0;
-  font-size: var(--text-base);
-  font-weight: 650;
-  flex: 1;
-  word-break: break-word;
-}
-.close {
-  cursor: pointer;
-  color: var(--text-muted);
-  font-size: var(--text-xl);
-  line-height: 1;
-  /* WCAG 2.5.8 asks for 24x24 CSS px on pointer targets; a bare glyph is well under it. */
-  min-width: 28px;
-  min-height: 28px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: none;
-  background: transparent;
-  border-radius: 5px;
-  flex: 0 0 auto;
-}
-.close:hover {
-  background: color-mix(in srgb, var(--text) 8%, transparent);
-  color: var(--text);
-}
-.meta {
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-  margin-bottom: 6px;
-}
-.sec {
-  text-transform: uppercase;
-  letter-spacing: 0.8px;
-  font-size: var(--text-xs);
-  color: var(--text-dim);
-  margin: 13px 0 6px;
-}
-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-td {
-  padding: 3px 0;
-  vertical-align: top;
-  font-size: var(--text-sm);
-}
-td.k {
-  color: var(--text-muted);
-  padding-right: 10px;
-  white-space: nowrap;
-  width: 1%;
-}
-td.v {
-  color: var(--text);
-  word-break: break-word;
-}
-.muted {
-  color: var(--text-dim);
-}
-.err {
-  font-size: var(--text-sm);
-}
-.skel {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.skel-row {
-  height: 11px;
-  border-radius: 3px;
-  background: color-mix(in srgb, var(--text) 8%, transparent);
-}
-.skel-row:nth-child(2) {
-  width: 80%;
-}
-.skel-row:nth-child(3) {
-  width: 55%;
-}
-@media (prefers-reduced-motion: no-preference) {
-  .skel-row {
-    animation: pulse 1.2s ease-in-out infinite;
-  }
-  @keyframes pulse {
-    50% {
-      opacity: 0.45;
-    }
-  }
-}
-.rels {
-  font-size: var(--text-sm);
-  margin-bottom: var(--space-2);
-}
-.nb {
-  display: inline-block;
-  margin: 2px 4px 2px 0;
-  padding: 4px 10px;
-  min-height: 24px;
-  border-radius: 20px;
-  background: var(--surface);
-  border: 1px solid var(--border-alt);
-  color: var(--text-muted);
-  font-family: inherit;
-  line-height: 1.4;
-  cursor: pointer;
-  font-size: var(--text-sm);
-}
-.nb:hover {
-  border-color: var(--primary);
-  color: var(--text);
-}
-.more {
-  margin-top: 6px;
-}
-</style>

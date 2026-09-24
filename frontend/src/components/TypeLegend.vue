@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { cn } from '@nuvek/ui'
 import { useGraph } from '../composables/useGraph'
 import { colorFor } from '../color'
 import { MOD_LABEL } from '../platform'
+import * as hud from './hud'
 
 const { counts, hidden, isHidden, toggleLabel, soloLabel, showAllLabels } = useGraph()
 
@@ -27,170 +29,43 @@ const onToggle = (e: Event) => {
 </script>
 
 <template>
-  <details class="types" :open="open" @toggle="onToggle">
-    <summary>
-      <span class="chev" aria-hidden="true"></span>
-      <h2>Types</h2>
-      <span class="ct">{{ counts.length }}</span>
+  <details :class="hud.section" :open="open" @toggle="onToggle">
+    <summary :class="hud.summary">
+      <span :class="hud.chevron" aria-hidden="true"></span>
+      <h2 :class="hud.heading">Types</h2>
+      <span class="text-sm text-fg-dim tabular-nums">{{ counts.length }}</span>
       <!-- Filters are invisible while collapsed; surface them so hidden types can't be forgotten.
            Kept a plain span — summary is itself a button, so it must not nest one. -->
-      <span v-if="hiddenCount" class="off-ct">{{ hiddenCount }} off</span>
+      <span v-if="hiddenCount" class="text-xs text-warning tabular-nums">{{ hiddenCount }} off</span>
     </summary>
-    <div class="items">
+    <!-- The list scrolls inside the HUD rather than growing the panel off-screen. Filtering types
+         changes its length constantly; the reserved gutter keeps rows from shifting sideways as
+         the scrollbar comes and goes. -->
+    <div class="mt-2 max-h-[min(46vh,340px)] overflow-y-auto [scrollbar-gutter:stable]">
       <button
         v-for="[label, ct] in counts"
         :key="label"
         type="button"
-        class="lg"
-        :class="{ off: isHidden(label) }"
+        :class="
+          cn(
+            'flex w-full cursor-pointer items-center gap-2 rounded-sm px-1 py-0.75 text-start select-none hover:bg-fg/5',
+            isHidden(label) && 'opacity-35',
+          )
+        "
         :aria-pressed="!isHidden(label)"
         :title="`Click to show/hide · ${MOD_LABEL}-click to isolate this type`"
         @click="onLegendClick($event, label)"
       >
-        <span class="dot" :style="{ background: colorFor(label) }"></span>
-        <span class="nm">{{ label }}</span>
-        <span class="ct">{{ ct }}</span>
+        <span class="size-2.5 flex-none rounded-full" :style="{ background: colorFor(label) }"></span>
+        <span class="flex-1 truncate">{{ label }}</span>
+        <span class="text-sm text-fg-dim tabular-nums">{{ ct }}</span>
       </button>
     </div>
-    <p class="tip">
+    <p :class="hud.tip">
       {{ MOD_LABEL }}-click to isolate<template v-if="hiddenCount">
         ·
-        <button type="button" class="reset" @click="showAllLabels()">show all</button>
+        <button type="button" :class="hud.inlineLink" @click="showAllLabels()">show all</button>
       </template>
     </p>
   </details>
 </template>
-
-<style scoped>
-.types {
-  margin-top: var(--space-3);
-  border-top: 1px solid var(--border-alt);
-  padding-top: var(--space-2);
-}
-summary {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  cursor: pointer;
-  padding: 2px 0;
-  border-radius: var(--radius-sm);
-  user-select: none;
-  /* Replace the native disclosure marker with the chevron below. */
-  list-style: none;
-}
-summary::-webkit-details-marker {
-  display: none;
-}
-summary:focus-visible {
-  outline: 2px solid var(--primary);
-  outline-offset: 2px;
-}
-.chev {
-  flex: 0 0 auto;
-  inline-size: 0;
-  block-size: 0;
-  border-inline-start: 5px solid currentColor;
-  border-block: 4px solid transparent;
-  color: var(--text-dim);
-  transition: rotate 160ms ease;
-}
-.types[open] .chev {
-  rotate: 90deg;
-}
-h2 {
-  margin: 0;
-  flex: 1;
-  font-size: var(--text-sm);
-  text-transform: uppercase;
-  letter-spacing: 0.8px;
-  color: var(--text-muted);
-  font-weight: 600;
-}
-.off-ct {
-  font-size: var(--text-xs);
-  color: var(--warning, var(--text-dim));
-  font-variant-numeric: tabular-nums;
-}
-.tip {
-  margin: var(--space-2) 0 0;
-  font-size: var(--text-xs);
-  color: var(--text-dim);
-}
-.reset {
-  border: none;
-  background: transparent;
-  padding: 0;
-  font: inherit;
-  color: var(--primary);
-  cursor: pointer;
-  text-decoration: underline;
-}
-.items {
-  /* The list scrolls inside the HUD rather than growing the panel off-screen. */
-  max-block-size: min(46vh, 340px);
-  overflow-y: auto;
-  /* Filtering types changes the list length constantly; reserve the gutter so the rows don't
-     shift sideways every time the scrollbar appears or goes away. */
-  scrollbar-gutter: stable;
-  margin-top: var(--space-2);
-}
-.lg {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  width: 100%;
-  padding: 3px 4px;
-  border: none;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  user-select: none;
-}
-.lg:hover {
-  background: color-mix(in srgb, var(--text) 5%, transparent);
-}
-.lg.off {
-  opacity: 0.35;
-}
-.dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  flex: 0 0 auto;
-}
-.nm {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ct {
-  color: var(--text-dim);
-  font-variant-numeric: tabular-nums;
-  font-size: var(--text-sm);
-}
-
-/* Progressive enhancement: browsers with ::details-content animate the open/close, the rest
-   snap. `interpolate-size: allow-keywords` (set in style.css) is what makes `auto` tweenable. */
-@media (prefers-reduced-motion: no-preference) {
-  .types::details-content {
-    block-size: 0;
-    overflow: clip;
-    transition:
-      block-size 200ms ease,
-      content-visibility 200ms;
-    transition-behavior: allow-discrete;
-  }
-  .types[open]::details-content {
-    block-size: auto;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .chev {
-    transition: none;
-  }
-}
-</style>

@@ -1,5 +1,6 @@
 import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import tailwindcss from '@tailwindcss/vite'
 
 // Dev: proxy /api to the local backend (view.sh runs it on 127.0.0.1:8901; override with
 //      VITE_API_TARGET when the backend runs elsewhere).
@@ -21,6 +22,7 @@ export default defineConfig(({ mode }) => {
     base: env.VITE_BASE_PATH || './',
     plugins: [
       vue(),
+      tailwindcss(),
       {
         // Keep the document title in step with the in-app heading. Vite's built-in %VAR%
         // substitution would leave a literal placeholder when the var is unset, so do it here

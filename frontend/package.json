@@ -9,19 +9,22 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@deck.gl/core": "^9.3.7",
-    "@deck.gl/layers": "^9.3.7",
-    "@deck.gl/mesh-layers": "^9.3.7",
-    "@luma.gl/engine": "^9.3.6",
-    "@nuvek/ui": "github:jean1880/nuvek-ui#v0.3.0",
+    "@deck.gl/core": "~9.3.11",
+    "@deck.gl/layers": "~9.3.11",
+    "@deck.gl/mesh-layers": "~9.3.11",
+    "@luma.gl/engine": "~9.3.6",
+    "@nuvek/ui": "github:jean1880/nuvek-ui#v1.0.0",
     "d3-force-3d": "^3.0.6",
-    "vue": "^3.5.25"
+    "reka-ui": "^2.10.5",
+    "vue": "^3.5.43"
   },
   "devDependencies": {
-    "@vitejs/plugin-vue": "^6.0.2",
-    "@webgpu/types": "^0.1.71",
+    "@tailwindcss/vite": "^4.3.3",
+    "@vitejs/plugin-vue": "^6.0.9",
+    "@webgpu/types": "^0.1.74",
+    "tailwindcss": "^4.3.3",
     "typescript": "~5.9.3",
-    "vite": "^7.3.1",
-    "vue-tsc": "^3.1.5"
+    "vite": "^8.3.0",
+    "vue-tsc": "^3.3.11"
   }
 }

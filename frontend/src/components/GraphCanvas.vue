@@ -751,19 +751,22 @@ onBeforeUnmount(() => {
 <template>
   <div
     ref="el"
-    class="graph"
+    class="fixed inset-0 bg-bg"
     role="img"
     aria-label="Interactive force-directed graph of the Neo4j nodes"
   ></div>
   <!-- Labels as DOM rather than canvas: constant size at any zoom, crisp at any DPI, and
        always over the graph. The container ignores pointer events so it never steals a drag
        from the canvas; the labels themselves accept them, so clicking a name selects its node. -->
-  <div class="labels" aria-hidden="true">
+  <!-- The overlay must never intercept a pan or a zoom — only the labels themselves are live.
+       Each label is positioned by the inline translate3d; the classes centre it on the node
+       (translate is its own property, so it composes with that transform) and lift it clear. -->
+  <div class="pointer-events-none fixed inset-0 z-5 overflow-hidden" aria-hidden="true">
     <button
       v-for="l in screenLabels"
       :key="l.id"
       type="button"
-      class="label"
+      class="pointer-events-auto absolute top-0 left-0 -mt-7 min-h-6 -translate-x-1/2 cursor-pointer rounded-sm bg-bg/88 px-2 py-0.75 text-sm leading-[1.4] whitespace-nowrap text-fg hover:bg-bg hover:text-white"
       :style="{ transform: `translate3d(${l.x}px, ${l.y}px, 0)` }"
       @click.stop="onLabelClick(l.id)"
       @mouseenter="onLabelHover(l.id)"
@@ -773,43 +776,3 @@ onBeforeUnmount(() => {
     </button>
   </div>
 </template>
-
-<style scoped>
-.labels {
-  position: fixed;
-  inset: 0;
-  z-index: 5;
-  /* The overlay must never intercept a pan or a zoom — only the labels themselves are live. */
-  pointer-events: none;
-  overflow: hidden;
-}
-.label {
-  position: absolute;
-  top: 0;
-  left: 0;
-  /* translate3d positions it; this centres it on the node and lifts it clear. */
-  margin: -28px 0 0 0;
-  translate: -50% 0;
-  pointer-events: auto;
-  font: inherit;
-  font-size: var(--text-sm);
-  line-height: 1.4;
-  white-space: nowrap;
-  padding: 3px 8px;
-  min-height: 24px;
-  border: none;
-  border-radius: var(--radius-sm, 4px);
-  background: color-mix(in srgb, var(--bg, #020617) 88%, transparent);
-  color: var(--text, #e8ebf4);
-  cursor: pointer;
-}
-.label:hover {
-  background: var(--bg, #020617);
-  color: #fff;
-}
-.graph {
-  position: fixed;
-  inset: 0;
-  background: var(--bg, #020617);
-}
-</style>
