@@ -9,7 +9,7 @@ import type { Dimensions } from '../composables/useViewMode'
  * became adjustable.
  *
  * **Kept per dimensionality on purpose.** 2D and 3D are different layouts, not a projection
- * (see CLAUDE.md), and their tuned values are not merely scaled versions of each other — a volume
+ * (see .claude/AGENTS.md), and their tuned values are not merely scaled versions of each other — a volume
  * layout needs containment that makes a plane layout balloon. One shared set of sliders would mean
  * every mode switch undoes the tuning you just did for the other mode.
  */

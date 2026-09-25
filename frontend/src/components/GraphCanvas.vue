@@ -698,7 +698,7 @@ watch(dimensions, () => {
   // Zoomed in far enough, switching to 3D therefore produced a blank canvas.
   //
   // There is nothing to preserve anyway: the two modes are different layouts in different
-  // coordinates (see CLAUDE.md), so a pose from one says nothing about the other. Starting neutral
+  // coordinates (see .claude/AGENTS.md), so a pose from one says nothing about the other. Starting neutral
   // also gives the post-load fit a sane camera to frame from.
   cancelTween();
   view.value = { ...INITIAL_VIEW };

@@ -143,7 +143,8 @@ Run the image with the environment injected by your orchestrator. The container 
 - **Keep the SPA reactivity shape.** `useGraph`'s `data` is a `shallowRef` over a `markRaw`'d
   payload because d3-force mutates every node ~60×/s; making it deeply reactive is a large,
   silent performance regression. Same reason `linksByNode` is precomputed rather than scanned.
-- **`CLAUDE.md`, `.claude/`, and `.env` are git-ignored** and may contain deployment-specific
+- **`.claude/` (including the local `.claude/AGENTS.md` overlay), `CLAUDE.md`, and `.env` are
+  git-ignored** and may contain deployment-specific
   detail. Never move their content into a tracked file, and never commit them.
 
 ## Shared dependencies

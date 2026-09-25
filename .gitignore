@@ -13,8 +13,9 @@ frontend/dist/
 *.gif
 *.webp
 
-# Local AI-assistant context. AGENTS.md is the committed, shareable version; CLAUDE.md and
-# .claude/ hold machine- and deployment-specific notes that must not be published.
+# Local AI-assistant context. The root AGENTS.md is the committed, shareable version;
+# .claude/AGENTS.md (and any CLAUDE.md) hold machine- and deployment-specific notes that must
+# not be published.
 CLAUDE.md
 .claude/
 .cursor/
@@ -55,5 +56,5 @@ yarn-error.log*
 .npm/
 
 # Local engineering notes: references the NAS / Dockerman / ansible-homelab, same reason
-# CLAUDE.md is ignored here. Keep deployment specifics out of the public repo.
+# .claude/ is ignored here. Keep deployment specifics out of the public repo.
 docs/performance-plan.md
