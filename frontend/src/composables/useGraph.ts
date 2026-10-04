@@ -26,6 +26,19 @@ const query = ref('')
 /** Timings for the most recent load — the measurement baseline for the performance work. */
 const perf = ref<LoadPerf | null>(null)
 
+const GROUP_STORAGE_KEY = 'graph-viz.selected-group.v1'
+
+function restoreGroup(): string {
+  try {
+    return window.localStorage.getItem(GROUP_STORAGE_KEY) || ''
+  } catch {
+    return ''
+  }
+}
+
+/** Active table/group. Empty string if no groups exist. Exclusively selects a single group. */
+const selectedGroup = ref<string>(restoreGroup())
+
 /**
  * Drawn node radius. Stamped onto each node at load rather than computed per frame, and shared
  * so the canvas paints its hit area from exactly the number it drew.
@@ -108,15 +121,42 @@ const focusLinks = computed<ReadonlySet<GraphLink>>(() => {
 /** True when the focus came from a live hover rather than the selection. */
 const focusFromHover = computed(() => hoveredId.value !== null && focusNode.value !== null)
 
-/** `[label, count]` pairs, sorted by count descending (for the legend). */
+/** Available distinct table/wrapper groups in the loaded graph (e.g. COTGE, HL, MH). */
+const availableGroups = computed(() => {
+  const set = new Set<string>()
+  for (const n of data.value.nodes) {
+    if (n.group) set.add(n.group)
+  }
+  return [...set].sort()
+})
+
+/** Nodes that belong to the currently selected table grouping. */
+const activeNodes = computed(() => {
+  const grp = selectedGroup.value
+  if (!grp) return data.value.nodes
+  return data.value.nodes.filter((n) => n.group === grp)
+})
+
+/** Active node id lookup set. */
+const activeNodeIds = computed(() => new Set(activeNodes.value.map((n) => n.id)))
+
+/** Links whose endpoints both belong to the currently selected table grouping. */
+const activeLinks = computed(() => {
+  const ids = activeNodeIds.value
+  return data.value.links.filter(
+    (l) => ids.has(linkEnd(l.source)) && ids.has(linkEnd(l.target)),
+  )
+})
+
+/** `[label, count]` pairs, sorted by count descending (for the legend of the active table). */
 const counts = computed(() => {
   const c = new Map<string, number>()
-  for (const n of data.value.nodes) c.set(n.label, (c.get(n.label) ?? 0) + 1)
+  for (const n of activeNodes.value) c.set(n.label, (c.get(n.label) ?? 0) + 1)
   return [...c.entries()].sort((a, b) => b[1] - a[1])
 })
 
 const stats = computed(
-  () => `${data.value.nodes.length} nodes · ${data.value.links.length} links`,
+  () => `${activeNodes.value.length} nodes · ${activeLinks.value.length} links`,
 )
 
 const selectedNode = computed<GraphNode | null>(() =>
@@ -128,11 +168,13 @@ const hoveredNode = computed<GraphNode | null>(() =>
 )
 
 /** A node can hold focus only while it is still on the canvas: it exists, its label is not
- *  hidden, and it survived any active search. */
+ *  hidden, it belongs to the active table, and it survived any active search. */
 function focusable(id: string | null): boolean {
   if (!id) return false
   const n = nodeById.value.get(id)
-  if (n === undefined || hidden.value.has(n.label)) return false
+  if (n === undefined) return false
+  if (selectedGroup.value && n.group !== selectedGroup.value) return false
+  if (hidden.value.has(n.label)) return false
   const visible = searchVisible.value
   return visible === null || visible.has(id)
 }
@@ -186,6 +228,17 @@ export function useGraph() {
       const t3 = performance.now()
 
       data.value = markRaw({ nodes, links: parsed.links })
+
+      // Ensure selectedGroup is valid for the loaded data
+      const groups = availableGroups.value
+      if (groups.length > 0) {
+        if (!selectedGroup.value || !groups.includes(selectedGroup.value)) {
+          selectedGroup.value = groups.includes('COTGE') ? 'COTGE' : groups[0]
+        }
+      } else {
+        selectedGroup.value = ''
+      }
+
       perf.value = {
         transferMs: t1 - t0,
         parseMs: t2 - t1,
@@ -263,13 +316,34 @@ export function useGraph() {
     hoveredId.value = id !== null && focusable(id) ? id : null
   }
 
+  function setGroup(group: string) {
+    if (selectedGroup.value === group) return
+    selectedGroup.value = group
+    try {
+      window.localStorage.setItem(GROUP_STORAGE_KEY, group)
+    } catch {
+      // Ignore localStorage errors (e.g. storage disabled or private browsing)
+    }
+    // Reset any label filters when switching table groups so we don't carry stale hidden labels
+    hidden.value = new Set()
+    reconcileFocus()
+  }
+
   function neighboursOf(node: GraphNode): Neighbour[] {
     const res: Neighbour[] = []
+    const grp = selectedGroup.value
     for (const l of linksByNode.value.get(node.id) ?? []) {
       const s = linkEnd(l.source)
       const t = linkEnd(l.target)
-      if (s === node.id) res.push({ node: nodeById.value.get(t), type: l.type, dir: '→' })
-      else res.push({ node: nodeById.value.get(s), type: l.type, dir: '←' })
+      const otherId = s === node.id ? t : s
+      const otherNode = nodeById.value.get(otherId)
+      if (otherNode && (!grp || otherNode.group === grp)) {
+        res.push({
+          node: otherNode,
+          type: l.type,
+          dir: s === node.id ? '→' : '←',
+        })
+      }
     }
     return res
   }
@@ -279,6 +353,11 @@ export function useGraph() {
     loading,
     error,
     perf,
+    selectedGroup,
+    availableGroups,
+    activeNodes,
+    activeLinks,
+    setGroup,
     hidden,
     selectedId,
     selectedNode,
@@ -307,3 +386,4 @@ export function useGraph() {
     linkEnd,
   }
 }
+

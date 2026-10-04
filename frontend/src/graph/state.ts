@@ -9,6 +9,8 @@ import type { GraphNode } from '../types'
  */
 export interface DrawState {
   nodes: GraphNode[]
+  /** Active table/group to display exclusively. Empty when no grouping is active. */
+  selectedGroup: string
   /** Labels the legend has switched off. */
   hidden: ReadonlySet<string>
   /** Survivors of the active search, or `null` when no search is running. Anything outside this
@@ -27,8 +29,9 @@ export interface DrawState {
   isolatedLabel: string | null
 }
 
-/** Whether a node is drawn at all: not hidden by the legend, and not filtered out by a search. */
+/** Whether a node is drawn at all: not hidden by the legend, not in another table, and not filtered out by a search. */
 export function isDrawn(state: DrawState, node: GraphNode): boolean {
+  if (state.selectedGroup && node.group !== state.selectedGroup) return false
   if (state.hidden.has(node.label)) return false
   return state.surviving === null || state.surviving.has(node.id)
 }

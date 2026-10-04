@@ -55,6 +55,7 @@ const el = ref<HTMLDivElement | null>(null);
 
 const {
   data,
+  selectedGroup,
   hidden,
   selectedId,
   hoveredId,
@@ -105,6 +106,7 @@ const isolatedLabel = computed<string | null>(() => {
 function drawState(): DrawState {
   return {
     nodes: data.value.nodes,
+    selectedGroup: selectedGroup.value,
     hidden: hidden.value,
     surviving: searchVisible.value,
     focusId: focusId.value,
@@ -615,6 +617,19 @@ watch(hidden, () => {
   restyleAndRender();
   settle();
 });
+
+// Switching the active table group: stop the previous force pass, recompute buffer styling,
+// unlatch camera so it frames the new table, refit bounds immediately, and run settle.
+watch(selectedGroup, () => {
+  if (!buf) return;
+  sim.stop();
+  labelsDirty = true;
+  userMovedCamera = false;
+  restyleAndRender();
+  fitToVisible({ animate: false });
+  settle();
+});
+
 
 // --- settings ----------------------------------------------------------------------------------
 // Only one slider is purely cosmetic. Link thickness changes a stroke width and nothing else, so

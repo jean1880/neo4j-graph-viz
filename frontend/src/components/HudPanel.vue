@@ -1,12 +1,35 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useGraph } from '../composables/useGraph'
 import { useSearch } from '../composables/useSearch'
 import LayoutSettings from './LayoutSettings.vue'
+import TableSelector from './TableSelector.vue'
 import TypeLegend from './TypeLegend.vue'
 
-const { stats, loading, error, load } = useGraph()
+const { stats, loading, error, load, selectedGroup, nodeById } = useGraph()
 const { query, searchResult, searching, searchError, breadth, runSearch, clearSearch } =
   useSearch()
+
+// Count only hits within the active table so search totals match canvas state
+const groupVisibleCount = computed(() => {
+  if (!searchResult.value) return 0
+  const grp = selectedGroup.value
+  if (!grp) return searchResult.value.visible.length
+  return searchResult.value.visible.filter((v) => {
+    const n = nodeById.value.get(v.id)
+    return n && n.group === grp
+  }).length
+})
+
+const groupMatchesCount = computed(() => {
+  if (!searchResult.value) return 0
+  const grp = selectedGroup.value
+  if (!grp) return searchResult.value.matches.length
+  return searchResult.value.matches.filter((m) => {
+    const n = nodeById.value.get(m.id)
+    return n && n.group === grp
+  }).length
+})
 
 // Changing breadth re-runs the current query — the knob is meaningless if you have to retype.
 function onBreadth() {
@@ -45,6 +68,7 @@ const pill = 'rounded-full border border-border-strong px-1.25 text-xs'
         <span aria-hidden="true">⟳</span>
       </button>
     </div>
+    <TableSelector class="mb-3" />
     <input
       v-model="query"
       type="search"
@@ -61,10 +85,10 @@ const pill = 'rounded-full border border-border-strong px-1.25 text-xs'
       <span v-if="searching" class="text-fg-dim">searching…</span>
       <span v-else-if="searchError" class="text-error">⚠ {{ searchError }}</span>
       <template v-else-if="searchResult">
-        <span v-if="searchResult.visible.length === 0" class="text-fg-dim">no matches</span>
+        <span v-if="groupVisibleCount === 0" class="text-fg-dim">no matches in active table</span>
         <span v-else>
-          {{ searchResult.visible.length }} shown ·
-          {{ searchResult.matches.length }} match{{ searchResult.matches.length === 1 ? '' : 'es' }}
+          {{ groupVisibleCount }} shown ·
+          {{ groupMatchesCount }} match{{ groupMatchesCount === 1 ? '' : 'es' }}
           <span v-if="searchResult.semantic" :class="pill" title="Embedding similarity contributed">
             semantic
           </span>
