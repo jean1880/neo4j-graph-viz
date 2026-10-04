@@ -4,19 +4,37 @@ import { useGraph } from '../composables/useGraph'
 
 const { availableGroups, selectedGroup, setGroup } = useGraph()
 
-const DESCRIPTIONS: Record<string, string> = {
-  COTGE: 'Collapse of the Great Empire (Victoria 3 Mod)',
-  HL: 'Homelab Infrastructure',
-  MH: 'Media Homelab',
+interface GroupMeta {
+  label: string
+  title: string
+}
+
+const GROUP_META: Record<string, GroupMeta> = {
+  COTGE: {
+    label: 'COTGE',
+    title: 'Collapse of the Great Empire (Victoria 3 Mod)',
+  },
+  HL: {
+    label: 'Homelab',
+    title: 'Homelab Infrastructure & Services',
+  },
+  MH: {
+    label: 'D&D (MH)',
+    title: 'D&D Campaign: The Monster Hunters (Veridia, Thera, Astral Sea)',
+  },
+}
+
+function labelFor(grp: string): string {
+  return GROUP_META[grp]?.label || grp
 }
 
 function titleFor(grp: string): string {
-  return DESCRIPTIONS[grp] || `Table: ${grp}`
+  return GROUP_META[grp]?.title || `Table: ${grp}`
 }
 
 const pill = (active: boolean) =>
   cn(
-    'flex-1 min-h-6.5 cursor-pointer rounded-sm px-2 py-1 text-center text-xs font-semibold tracking-wide transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary select-none',
+    'flex-1 min-h-6.5 cursor-pointer rounded-sm px-2 py-1 text-center text-xs font-semibold tracking-wide transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary select-none truncate',
     active
       ? 'bg-primary text-bg hover:bg-primary hover:text-bg shadow-xs'
       : 'text-fg-dim hover:bg-fg/7 hover:text-fg',
@@ -41,7 +59,7 @@ const pill = (active: boolean) =>
         :title="titleFor(grp)"
         @click="setGroup(grp)"
       >
-        {{ grp }}
+        {{ labelFor(grp) }}
       </button>
     </div>
 
@@ -56,7 +74,7 @@ const pill = (active: boolean) =>
         @change="setGroup(($event.target as HTMLSelectElement).value)"
       >
         <option v-for="grp in availableGroups" :key="grp" :value="grp" :title="titleFor(grp)">
-          {{ grp }} — {{ DESCRIPTIONS[grp] || 'Graph Table' }}
+          {{ labelFor(grp) }} — {{ titleFor(grp) }}
         </option>
       </select>
     </div>
